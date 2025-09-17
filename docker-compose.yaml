@@ -1,26 +1,26 @@
 services:
-    scribble:
-    image: goosews/scribble:latest
-    container_name: scribble
-    restart: unless-stopped
-    environment:
-        # --- Required ---
-        GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
-        DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
+  scribble:
+  image: goosews/scribble:latest
+  container_name: scribble
+  restart: unless-stopped
+  environment:
+    # --- Required ---
+    GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
+    DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
 
-        # --- Optional: User/Group Mapping ---
-        PUID: "1000"
-        PGID: "1000"
-        TZ: "America/New_York"
+    # --- Optional: User/Group Mapping ---
+    PUID: "1000"
+    PGID: "1000"
+    TZ: "America/New_York"
 
-        # --- Optional: Whisper Performance Tuning ---
-        OUTPUT_VERBOSITY: "3"
-        WHISPER_MODEL: "large-v3"
-        WHISPER_THREADS: "24"
-        WHISPER_BATCH_SIZE: "24"
-        WHISPER_BEAM_SIZE: "3"
-        WHISPER_VAD_METHOD: "silero"
+    # --- Optional: Whisper Performance Tuning ---
+    OUTPUT_VERBOSITY: "3"
+    WHISPER_MODEL: "large-v3"
+    WHISPER_THREADS: "24"
+    WHISPER_BATCH_SIZE: "24"
+    WHISPER_BEAM_SIZE: "3"
+    WHISPER_VAD_METHOD: "silero"
 
-        SPOOL_TIME: "3600" # Check for new files every hour
-    volumes:
-        - ./app:/app
+    SPOOL_TIME: "3600" # Check for new files every hour
+  volumes:
+    - ./app:/app
