@@ -21,6 +21,6 @@ services:
       WHISPER_BEAM_SIZE: "3"
       WHISPER_VAD_METHOD: "silero"
 
-      SPOOL_TIME: "3600" # Check for new files every hour
+      RESPAWN_TIME: "3600" # Check for new files every hour
     volumes:
       - ./app:/app

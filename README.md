@@ -63,7 +63,7 @@ Before you begin, you will need three things:
           WHISPER_BEAM_SIZE: "3"
           WHISPER_VAD_METHOD: "silero"
           
-          SPOOL_TIME: "3600" # Check for new files every hour
+          RESPAWN_TIME: "3600" # Check for new files every hour
         volumes:
           - ./app:/app
     ```
@@ -82,7 +82,7 @@ Before you begin, you will need three things:
 6.  **Usage**:
       * When your TTRPG session is over, download the **multi-track FLAC zip file** from Craig.
       * Place the entire `.zip` file into the `app/Sessions` directory.
-      * Scribble will automatically detect and process the file on its next cycle (defined by `SPOOL_TIME`).
+      * Scribble will automatically detect and process the file on its next cycle (defined by `RESPAWN_TIME`).
 
 ## Configuration
 
@@ -95,7 +95,7 @@ Before you begin, you will need three things:
 | `PUID` | No | `0` | The User ID for file permissions. Match to your host user. |
 | `PGID` | No | `0` | The Group ID for file permissions. Match to your host group. |
 | `TZ` | No | `Etc/UTC`| Your local timezone (e.g., `America/New_York`). |
-| `SPOOL_TIME` | No | `3600` | Time in seconds to wait between checking for new files. |
+| `RESPAWN_TIME` | No | `3600` | Time in seconds to wait between checking for new files. |
 | `OUTPUT_VERBOSITY` | No | `3` | `1`: Errors, `2`: Warnings, `3`: Info, `4`: Verbose. |
 | `WHISPER_MODEL` | No | `large-v3` | The whisper model to use (e.g., `medium.en`, `base.en`). |
 | `WHISPER_THREADS` | No | (all) | Number of CPU threads for whisperx to use. |
