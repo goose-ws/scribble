@@ -14,7 +14,7 @@ services:
       TZ: "America/New_York"
 
       # --- Optional: Whisper Performance Tuning ---
-     OUTPUT_VERBOSITY: "3"
+      OUTPUT_VERBOSITY: "3"
       WHISPER_MODEL: "large-v3"
       WHISPER_THREADS: "24"
       WHISPER_BATCH_SIZE: "24"
