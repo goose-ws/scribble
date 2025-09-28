@@ -58,6 +58,8 @@ Before you begin, you will need three things:
           PUID: "1000"
           PGID: "1000"
           TZ: "America/New_York"
+          WEB_PASSWORD: "YOUR_WEB_INTERFACE_PASSWORD_HERE"
+          WEB_COOKIE_KEY: "SOME_SECRET_HASH_HERE"
           
           # --- Optional: Whisper Performance Tuning ---
           OUTPUT_VERBOSITY: "3"
@@ -87,6 +89,7 @@ Before you begin, you will need three things:
       * When your TTRPG session is over, download the **multi-track FLAC zip file** from Craig.
       * Place the entire `.zip` file into the `app/Sessions` directory.
       * Scribble will automatically detect and process the file on its next cycle (defined by `RESPAWN_TIME`).
+      * Alternatively, `.zip` files can be uploaded (by link, or from your filesystem) via the web UI.
 
 ## Configuration
 
@@ -99,6 +102,8 @@ Before you begin, you will need three things:
 | `PUID` | No | `0` | The User ID for file permissions. Match to your host user. |
 | `PGID` | No | `0` | The Group ID for file permissions. Match to your host group. |
 | `TZ` | No | `Etc/UTC`| Your local timezone (e.g., `America/New_York`). |
+| `WEB_PASSWORD` | No | (random string) | Password for the web UI. |
+| `WEB_COOKIE_KEY` | No | (random string) | Hash for cookies, highly recommended to be set if using web UI. |
 | `RESPAWN_TIME` | No | `3600` | Time in seconds to wait between checking for new files. |
 | `OUTPUT_VERBOSITY` | No | `3` | `1`: Errors, `2`: Warnings, `3`: Info, `4`: Verbose. |
 | `WHISPER_MODEL` | No | `large-v3` | The whisper model to use (e.g., `medium.en`, `base.en`). |
@@ -111,6 +116,8 @@ Before you begin, you will need three things:
 | `WHISPER_VAD_OFFSET`| No | `0.363` | Voice activity detection offset threshold. |
 | `WHISPER_LANGUAGE` | No | `en` | Two-letter language code for the audio. |
 | `WHISPER_COMPUTE_TYPE`| No | `int8` | `int8` is recommended for CPU inference. |
+
+If you wish to use SSL with the web UI, there is an included `nginx.conf` sample server block you could use to proxy SSL via nginx.
 
 ### Volumes
 
