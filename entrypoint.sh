@@ -14,9 +14,9 @@ if ! getent passwd appuser >/dev/null; then
     useradd --shell /bin/bash -u "${PUID}" -g "${PGID}" -m appuser
 fi
 
-# Set ownership of the app directory
+# Set ownership of the app directory and any other required paths
+# This ensures the appuser can write to the save path
 chown -R appuser:appgroup /app
 
-# Drop privileges and execute the main command (CMD)
-# The "$@" passes along any arguments from the Docker CMD
-exec gosu appuser "${@}"
+# Execute
+exec "${@}"

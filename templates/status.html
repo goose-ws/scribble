@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Status</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 2rem; }
+        h1 { color: #333; margin: 0; }
+        .nav-links a { color: #007bff; text-decoration: none; margin-left: 1.5rem; }
+        .nav-links a:hover { text-decoration: underline; }
+        .session-list { list-style: none; padding: 0; }
+        .session-item { display: flex; align-items: center; padding: 1rem; border-bottom: 1px solid #f0f0f0; }
+        .session-item:last-child { border-bottom: none; }
+        .session-name { font-weight: 500; flex: 1; }
+        .session-status { font-weight: bold; margin-left: 1rem; }
+        .status-waiting { color: #6c757d; }
+        .status-progress { color: #007bff; }
+        .status-complete { color: #28a745; }
+        .progress-container { flex: 2; display: flex; align-items: center; margin-left: 1rem; }
+        .progress-bar { width: 100%; background-color: #e9ecef; border-radius: .25rem; height: 1rem; overflow: hidden; }
+        .progress-bar-inner { background-color: #007bff; height: 100%; text-align: center; color: white; font-size: 0.75rem; line-height: 1rem; transition: width .6s ease; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Processing Status</h1>
+            <div class="nav-links">
+                <a href="{{ url_for('upload_page') }}">Uploader</a>
+                <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </div>
+        
+        {% if sessions %}
+        <ul class="session-list">
+            {% for session in sessions %}
+            <li class="session-item">
+                <div class="session-name">{{ session.name }}</div>
+                {% if session.status == 'In Progress' %}
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-bar-inner" style="width: {{ session.progress }}%;">{{ session.progress }}%</div>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="session-status
+                    {% if session.status == 'Waiting' %}status-waiting
+                    {% elif session.status == 'In Progress' %}status-progress
+                    {% elif session.status == 'Complete' %}status-complete
+                    {% endif %}
+                ">{{ session.status }}</div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p>No sessions found to process. Upload a file to get started!</p>
+        {% endif %}
+
+    </div>
+</body>
+</html>
