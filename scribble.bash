@@ -11,7 +11,7 @@
 
 function printOutput {
 if ! [[ "${1}" =~ ^[0-9]+$ ]]; then
-    echo -e "$(date "+%Y-%m-%d %H:%M:%S")   ::   [${colorRed}error${colorReset}] Invalid message level [${1}] passed to printOutput function"
+    echo -e "scribble   ::   $(date "+%Y-%m-%d %H:%M:%S")   ::   [${colorRed}error${colorReset}] Invalid message level [${1}] passed to printOutput function"
     return 1
 fi
 
@@ -24,7 +24,7 @@ case "${1}" in
     5) logLevel="[${colorPurple}DEBUG${colorReset}]";; # Super Secret Very Excessive Debug Mode
 esac
 if [[ "${1}" -le "${OUTPUT_VERBOSITY}" ]]; then
-    echo -e "$(date "+%Y-%m-%d %H:%M:%S")   ::   ${logLevel} ${2}"
+    echo -e "scribble   ::   $(date "+%Y-%m-%d %H:%M:%S")   ::   ${logLevel} ${2}"
 fi
 }
 
@@ -231,10 +231,6 @@ colorReset="\033[0m"
 trap graceful_shutdown SIGINT SIGTERM
 
 # Main Execution
-
-
-
-
 while [[ -z "${shutdown_requested}" ]]; do
     totalStartTime="$(($(date +%s%N)/1000000))"
     printOutput 3 "Starting Scribble"
