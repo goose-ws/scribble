@@ -28,6 +28,7 @@ if not APP_PASSWORD:
     print("---------------------------------------------------", flush=True)
 
 # --- Configuration ---
+PROMPT_FILE_PATH = "/app/prompt.txt"
 SAVE_PATH = "/app/Sessions"
 ALLOWED_EXTENSIONS = {'zip'} # Allowed file extensions
 
@@ -139,6 +140,44 @@ def status_page():
             sessions.append({'name': item_name, 'status': 'In Progress', 'progress': progress})
 
     return render_template('status.html', sessions=sessions)
+
+# --- Prompt editor ---
+@app.route('/prompt', methods=['GET'])
+def edit_prompt():
+    """
+    Displays the editor page. Reads the current content of prompt.txt
+    and passes it to the HTML template.
+    """
+    if not is_user_logged_in():
+        return redirect(url_for('login'))
+
+    content = ""
+    if os.path.exists(PROMPT_FILE_PATH):
+        with open(PROMPT_FILE_PATH, 'r', encoding='utf-8') as f:
+            content = f.read()
+    
+    return render_template('prompt_editor.html', prompt_content=content)
+
+@app.route('/save_prompt', methods=['POST'])
+def save_prompt():
+    """
+    Receives the submitted text from the form and writes it to prompt.txt.
+    """
+    if not is_user_logged_in():
+        return redirect(url_for('login'))
+
+    # Get the text from the form's textarea
+    new_content = request.form.get('prompt_text', '')
+    
+    # IMPORTANT: Ensure Unix (LF) line endings as requested
+    new_content = new_content.replace('\r\n', '\n')
+    
+    # Write the new content to the file
+    with open(PROMPT_FILE_PATH, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    
+    # Redirect back to the editor page
+    return redirect(url_for('edit_prompt'))
 
 # --- Other Routes ---
 @app.route('/login', methods=['GET', 'POST'])

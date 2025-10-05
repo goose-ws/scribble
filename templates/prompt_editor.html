@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Uploader</title>
+    <title>Prompt Editor</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 2rem; }
         .container { max-width: 600px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -27,7 +27,8 @@
         .header { display: flex; justify-content: space-between; align-items: center; ... }
         .nav-links a { color: #007bff; text-decoration: none; margin-left: 1.5rem; }
         .nav-links a:hover { text-decoration: underline; }
-    </style>
+    </style>    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
 </head>
 <body>
     <div class="container">
@@ -40,30 +41,23 @@
                 <a href="{{ url_for('logout') }}" class="logout">Logout</a>
             </div>
         </div>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="alert {{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-
-        <form method="post" enctype="multipart/form-data">
-            <div class="upload-section">
-                <h2>Upload a File</h2>
-                <input type="file" name="file">
-            </div>
-
-            <div class="separator">OR</div>
-
-            <div class="upload-section">
-                <h2>Upload via URL</h2>
-                <input type="text" name="url" placeholder="https://craig.horse/flac.zip">
-            </div>
-
-            <button type="submit">Submit</button>
+        <h1>Edit Prompt File</h1>
+        <p>Modify the prompt that is sent to the Gemini API for generating session recaps.</p>
+        
+        <form action="{{ url_for('save_prompt') }}" method="post">
+          <textarea id="prompt-editor" name="prompt_text">{{ prompt_content }}</textarea>
+          <button type="submit">Save Prompt</button>
         </form>
     </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+    <script>
+      // Initialize CodeMirror on the textarea element
+      CodeMirror.fromTextArea(document.getElementById('prompt-editor'), {
+        lineNumbers: true,
+        mode: 'text/plain',
+        lineWrapping: true
+      });
+    </script>
 </body>
 </html>
