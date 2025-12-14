@@ -68,7 +68,7 @@ function send_chunk {
         return
     fi
 
-    printOutput 5 "Sending chunk of [${#chunk}] characters"
+    printOutput "5" "Sending chunk of [${#chunk}] characters"
 
     local http_code
     # Use jq to safely create the JSON payload. The --arg flag is the correct
@@ -84,9 +84,9 @@ function send_chunk {
             "${url}")
 
     if [[ "${http_code}" -ge 200 && "${http_code}" -lt 300 ]]; then
-        printOutput 5 "Successfully sent chunk (HTTP ${http_code})"
+        printOutput "5" "Successfully sent chunk (HTTP ${http_code})"
     else
-        printOutput 1 "Discord API returned HTTP status [${http_code}]"
+        printOutput "1" "Discord API returned HTTP status [${http_code}]"
         exit 1
     fi
 }
@@ -183,6 +183,7 @@ fi
 
 # Gemini options
 MODEL_ID="gemini-2.5-pro"
+#MODEL_ID="gemini-3-pro-preview"
 GENERATE_CONTENT_API="streamGenerateContent"
 PROMPT_FILE="/app/prompt.txt"
 
@@ -233,30 +234,30 @@ trap graceful_shutdown SIGINT SIGTERM
 # Main Execution
 while [[ -z "${shutdown_requested}" ]]; do
     totalStartTime="$(($(date +%s%N)/1000000))"
-    printOutput 3 "Starting Scribble"
+    printOutput "3" "Starting Scribble"
 
     # Find zipped session files non-recursively.
     mapfile -d '' zip_files < <(find "${BASE_DIR}" -maxdepth 1 -type f -name "craig-*.flac.zip" -print0)
 
     if (( ${#zip_files[@]} == 0 )); then
-        printOutput 3 "No 'craig-*.flac.zip' files found to process."
+        printOutput "3" "No 'craig-*.flac.zip' files found to process."
     fi
 
     for zip_file in "${zip_files[@]}"; do
-        printOutput 3 "Processing Zip File [${zip_file}]"
+        printOutput "3" "Processing Zip File [${zip_file}]"
         startTime="$(($(date +%s%N)/1000000))"
         
         # Make sure the file is done being written by getting its size twice, three seconds apart
-        read -ra size_1 < <(du -sb "${file}")
+        read -ra size_1 < <(du -sb "${zip_file}")
         sleep 3
-        read -ra size_2 < <(du -sb "${file}")
+        read -ra size_2 < <(du -sb "${zip_file}")
         if [[ "${size_1[0]}" -ne "${size_2[0]}" ]]; then
             printOutput "2" "File appears to have changed sized, possibly still being copied/written -- Waiting for size to stabilize"
             while [[ "${size_1[0]}" -ne "${size_2[0]}" ]]; do
                 sleep 3
-                read -ra size_1 < <(du -sb "${file}")
+                read -ra size_1 < <(du -sb "${zip_file}")
                 sleep 3
-                read -ra size_2 < <(du -sb "${file}")
+                read -ra size_2 < <(du -sb "${zip_file}")
             done
         fi
         printOutput "4" "Verified file"
@@ -269,10 +270,10 @@ while [[ -z "${shutdown_requested}" ]]; do
         while read -r line; do
             printOutput "4" "${line}"
         done < <(unzip -o "${zip_file}" -d "${unzipped_dir}")
-        printOutput 4 "Unzipped in $(timeDiff "${startTime}")"
+        printOutput "4" "Unzipped in $(timeDiff "${startTime}")"
 
         if [[ ! -f "${info_file}" ]]; then
-            printOutput 2 "'info.txt' not found in the unzipped folder '${unzipped_dir}'. Skipping."
+            printOutput "2" "'info.txt' not found in the unzipped folder '${unzipped_dir}'. Skipping."
             continue
         fi
 
@@ -286,7 +287,7 @@ while [[ -z "${shutdown_requested}" ]]; do
         done < "${info_file}"
         
         if [[ -z "${session_date}" ]]; then
-            printOutput 2 "Could not find 'Start time:' in ${info_file}. Skipping."
+            printOutput "2" "Could not find 'Start time:' in ${info_file}. Skipping."
             rm -rf "${unzipped_dir}" # Clean up
             continue
         fi
@@ -295,12 +296,12 @@ while [[ -z "${shutdown_requested}" ]]; do
         # If session folder already exists, remove the newly unzipped folder.
         # The existing folder will be processed.
         if [[ -d "${workdir}" ]]; then
-            printOutput 3 "Work directory '${workdir}' already exists. Assuming it's a work-in-progress."
-            printOutput 4 "Removing temporary unzipped folder: ${unzipped_dir}"
+            printOutput "3" "Work directory '${workdir}' already exists. Assuming it's a work-in-progress."
+            printOutput "4" "Removing temporary unzipped folder: ${unzipped_dir}"
             rm -rf "${unzipped_dir}"
         else
             # Otherwise, rename the unzipped folder to be the new work directory.
-            printOutput 3 "Creating new work directory by renaming unzipped folder to '${workdir}'"
+            printOutput "3" "Creating new work directory by renaming unzipped folder to '${workdir}'"
             mv "${unzipped_dir}" "${workdir}"
         fi
         
@@ -310,7 +311,7 @@ while [[ -z "${shutdown_requested}" ]]; do
         fi
         
         # Process the session directory (either the pre-existing one or the new one).
-        printOutput 3 "--- Starting transcription for session in ${workdir} ---"
+        printOutput "3" "--- Starting transcription for session in ${workdir} ---"
         mkdir -p "${workdir}/progress" "${workdir}/transcripts"
 
         # Find all flac files and loop through them.
@@ -327,11 +328,11 @@ while [[ -z "${shutdown_requested}" ]]; do
 
             # If a transcript for this user already exists, skip transcription.
             if [[ -f "${transcript_file}" ]]; then
-                printOutput 4 "Transcript for ${username} already exists. Skipping."
+                printOutput "4" "Transcript for ${username} already exists. Skipping."
                 continue
             fi
 
-            printOutput 3 "Transcribing file [${file}] for user [${username}]"
+            printOutput "3" "Transcribing file [${file}] for user [${username}]"
             unset outputArr transcriptArr
 
             # Execute whisper command and read its output line by line.
@@ -386,15 +387,15 @@ while [[ -z "${shutdown_requested}" ]]; do
             # Move the json file
             mv "${file%.flac}.json" "${transcript_json}"
 
-            printOutput 3 "Transcription for ${username} complete -- Took $(timeDiff "${startTime}")"
+            printOutput "3" "Transcription for ${username} complete -- Took $(timeDiff "${startTime}")"
         done < <(find "${workdir}" -type f -name "*.flac")
-        printOutput 3 "--- All transcriptions for this session are complete. ---"
+        printOutput "3" "--- All transcriptions for this session are complete. ---"
         
         session_transcript_file="${workdir}/session_transcript.txt"
 
         # Write session transcript file
         if ! [[ -f "${session_transcript_file}" ]]; then
-            printOutput 3 "--- Merging transcripts for session in ${workdir} ---"
+            printOutput "3" "--- Merging transcripts for session in ${workdir} ---"
             unset transcript_output
             readarray -t transcript_files < <(find "${workdir}/transcripts/" -type f -name "*_transcript.txt")
             for file in "${transcript_files[@]}"; do
@@ -429,7 +430,7 @@ while [[ -z "${shutdown_requested}" ]]; do
 
             # Prep the file upload
             MIME_TYPE=$(file --brief --mime-type "${session_transcript_file}")
-            printOutput 4 "Processing file: ${session_transcript_file} [MIME type: ${MIME_TYPE}]"
+            printOutput "4" "Processing file: ${session_transcript_file} [MIME type: ${MIME_TYPE}]"
 
             # Base64 encode the file and pipe it directly into a jq command.
             # Using -R (raw) and -s (slurp) is the most robust way to read the
@@ -455,7 +456,8 @@ while [[ -z "${shutdown_requested}" ]]; do
               }' > request.json
 
             # Execute the API call and capture the full response.
-            printOutput 3 "Sending request to the Gemini API..."
+            printOutput "3" "Sending request to the Gemini API..."
+            printOutput "5" "Issuing curl call [curl -s -X POST -H \"Content-Type: application/json\" \"https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:${GENERATE_CONTENT_API}?key=${GEMINI_API_KEY}\" -d '@request.json']"
             API_RESPONSE=$(curl -s \
               -X POST \
               -H "Content-Type: application/json" \
@@ -463,33 +465,33 @@ while [[ -z "${shutdown_requested}" ]]; do
               -d '@request.json')
               
             if [[ "$(jq ".[0].error.code" <<<"${API_RESPONSE}")" == "503" ]]; then
-                printOutput 2 "Received API response 503: $(jq -r ".[0].error.message")"
-                printOutput 3 "Skipping processing until next run"
+                printOutput "2" "Received API response 503: $(jq -r ".[0].error.message")"
+                printOutput "3" "Skipping processing until next run"
                 continue
             fi
               
-            printOutput 5 "Received API response:"
-            printOutput 5 "------------------------------------------------------------------"
+            printOutput "5" "Received API response:"
+            printOutput "5" "------------------------------------------------------------------"
             while read -r line; do
-                printOutput 5 "${line}"
+                printOutput "5" "${line}"
             done <<<"${API_RESPONSE}"
-            printOutput 5 "------------------------------------------------------------------"
+            printOutput "5" "------------------------------------------------------------------"
 
             # Check for errors from the API.
             if ! echo "${API_RESPONSE}" | jq -e 'type == "array"' > /dev/null; then
-                printOutput 1 "The API did not return a valid stream (expected a JSON array)."
-                printOutput 1 "API Response:"
+                printOutput "1" "The API did not return a valid stream (expected a JSON array)."
+                printOutput "1" "API Response:"
                 echo "${API_RESPONSE}" | jq . # Pretty-print the error JSON
                 exit 1
             fi
 
             # Process the successful response.
-            printOutput 3 "Processing response..."
+            printOutput "3" "Processing response..."
             SUMMARY=$(echo "${API_RESPONSE}" | jq -r '[.[] | .candidates[].content.parts[].text] | add')
 
             # Check if the summary was generated.
             if [[ -z "${SUMMARY}" ]]; then
-                printOutput 1 "Failed to generate a summary from the API response."
+                printOutput "1" "Failed to generate a summary from the API response."
                 exit 1
             else
                 unset SUMMARY_ARR
@@ -497,12 +499,12 @@ while [[ -z "${shutdown_requested}" ]]; do
                 SUMMARY="$(printf '%s\n' "${SUMMARY_ARR[@]}")"
                 SUMMARY="${SUMMARY//$'\n\n\n'/$'\n\n'}"
             fi
-            printOutput 3 "Summary successfully generated:"
-            printOutput 4 "------------------------------------------------------------------"
+            printOutput "3" "Summary successfully generated:"
+            printOutput "4" "------------------------------------------------------------------"
             while read -r line; do
                 printOutput "4" "${line}"
             done <<<"${SUMMARY}"
-            printOutput 4 "------------------------------------------------------------------"
+            printOutput "4" "------------------------------------------------------------------"
             echo "${SUMMARY}" > "${gemini_recap_file}"
             
             # Finally, send the summary to Discord
@@ -530,49 +532,105 @@ while [[ -z "${shutdown_requested}" ]]; do
                     fi
                 else
                     # Not a blank line: append it to the current paragraph.
+                    # Discord markdown for headers maxes out at three "#", make sure Gemini didn't send four:
+                    while [[ "${line}" == *"####"* ]]; do
+                        line="${line//####/###}"
+                    done
                     current_paragraph+="${line}"$'\n'
                 fi
             done <<< "${SUMMARY}"$'\n\n'
+            
+            # Old Send Code
+            # # Send each paragraph as a separate message
+            # for paragraph in "${paragraphs[@]}"; do
+                # # Skip any empty array elements.
+                # if [[ -z "${paragraph}" ]]; then
+                    # continue
+                # fi
 
-            # Send each paragraph as a separate message
+                # # If a single paragraph is too long, it must be chunked and sent.
+                # if (( ${#paragraph} > DISCORD_MSG_LIMIT )); then
+                    # printOutput "2" "A paragraph exceeds the character limit; it will be split mid-paragraph."
+                    # temp_paragraph="${paragraph}"
+                    # while ((${#temp_paragraph} > 0)); do
+                        # send_chunk "${DISCORD_WEBHOOK}" "${temp_paragraph:0:DISCORD_MSG_LIMIT}"
+                        # temp_paragraph="${temp_paragraph:DISCORD_MSG_LIMIT}"
+                        # sleep 0.5
+                    # done
+                # else
+                    # # Otherwise, send the whole paragraph as one message.
+                    # send_chunk "${DISCORD_WEBHOOK}" "${paragraph}"
+                # fi
+
+                # # A brief pause to respect Discord's rate limits between messages.
+                # sleep 0.5
+            # done
+            
+            # New send code
+            # 1. Define the Thread Title
+            THREAD_TITLE="${formatted_date} Session Recap"
+            
+            # 2. Start the thread.
+            # We send a "Starter" message. This creates the thread in a Forum Channel.
+            # We must use '?wait=true' to get the JSON response containing the new Thread/Message ID.
+            printOutput "3" "Creating Discord Thread: ${THREAD_TITLE}"
+            
+            start_response=$(jq -n \
+                --arg content "# ${THREAD_TITLE}" \
+                --arg title "$THREAD_TITLE" \
+                '{content: $content, thread_name: $title}' | \
+                curl -sS -H "Content-Type: application/json" -X POST \
+                "${DISCORD_WEBHOOK}?wait=true" -d @-)
+
+            # 3. Extract the ID. In a Forum Channel, the starting message ID is the Thread ID.
+            thread_id=$(echo "$start_response" | jq -r '.id')
+
+            if [[ "$thread_id" == "null" || -z "$thread_id" ]]; then
+                printOutput "1" "Failed to create thread. Discord returned: $start_response"
+                # Fallback: Send to the main channel if thread creation fails
+                TARGET_WEBHOOK="${DISCORD_WEBHOOK}"
+            else
+                printOutput "3" "Thread created successfully [ID: ${thread_id}]. Sending paragraphs..."
+                # Target the specific thread for subsequent messages
+                TARGET_WEBHOOK="${DISCORD_WEBHOOK}?thread_id=${thread_id}"
+            fi
+
+            # 4. Send the paragraphs to the new Thread
             for paragraph in "${paragraphs[@]}"; do
-                # Skip any empty array elements.
                 if [[ -z "${paragraph}" ]]; then
                     continue
                 fi
 
-                # If a single paragraph is too long, it must be chunked and sent.
                 if (( ${#paragraph} > DISCORD_MSG_LIMIT )); then
-                    printOutput 2 "A paragraph exceeds the character limit; it will be split mid-paragraph."
+                    printOutput "2" "Paragraph exceeds limit; splitting..."
                     temp_paragraph="${paragraph}"
                     while ((${#temp_paragraph} > 0)); do
-                        send_chunk "${DISCORD_WEBHOOK}" "${temp_paragraph:0:DISCORD_MSG_LIMIT}"
+                        # Use the TARGET_WEBHOOK (with thread_id)
+                        send_chunk "${TARGET_WEBHOOK}" "${temp_paragraph:0:DISCORD_MSG_LIMIT}"
                         temp_paragraph="${temp_paragraph:DISCORD_MSG_LIMIT}"
                         sleep 0.5
                     done
                 else
-                    # Otherwise, send the whole paragraph as one message.
-                    send_chunk "${DISCORD_WEBHOOK}" "${paragraph}"
+                    # Use the TARGET_WEBHOOK (with thread_id)
+                    send_chunk "${TARGET_WEBHOOK}" "${paragraph}"
                 fi
-
-                # A brief pause to respect Discord's rate limits between messages.
                 sleep 0.5
             done
         fi
 
         # Clean up the original zip file after processing.
-        printOutput 3 "Processing complete for this session. Removing original zip file: ${zip_file}"
+        printOutput "3" "Processing complete for this session. Removing original zip file: ${zip_file}"
         rm -f "${zip_file}"
     done
 
-    printOutput 3 "All processing complete | Execution took $(timeDiff "${totalStartTime}")"
+    printOutput "3" "All processing complete | Execution took $(timeDiff "${totalStartTime}")"
     
     if [[ -n "${shutdown_requested}" ]]; then
         break
     fi
 
     # Run sleep in the background and get its Process ID (PID)
-    printOutput 3 "Sleeping for [${RESPAWN_TIME}] seconds"
+    printOutput "3" "Sleeping for [${RESPAWN_TIME}] seconds"
     sleep "${RESPAWN_TIME}" &
     sleep_pid="${!}"
     
