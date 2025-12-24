@@ -1,6 +1,5 @@
-<p align="center">
-<img src="https://github.com/goose-ws/scribble/blob/main/scribble.png?raw=true" alt="Scribble" />
-</p>
+![alt text](https://github.com/goose-ws/scribble/blob/main/scribble.png?raw=true "Scribble")
+
 [![Pulls on DockerHub](https://img.shields.io/docker/pulls/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20pulls&logo=docker)](https://hub.docker.com/r/goosews/scribble)
 [![Stars on DockerHub](https://img.shields.io/docker/stars/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20stars&logo=docker)](https://hub.docker.com/r/goosews/scribble)
 [![Stars on GitHub](https://img.shields.io/github/stars/goose-ws/scribble.svg?style=for-the-badge&label=GitHub%20Stars&logo=github)](https://github.com/goose-ws/scribble)
