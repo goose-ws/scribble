@@ -1,4 +1,4 @@
-![alt text](https://github.com/goose-ws/scribble/blob/main/scribble.png?raw=true "Scribble")
+![alt text](https://github.com/goose-ws/scribble/blob/main/Scribble.png?raw=true "Scribble")
 
 [![Pulls on DockerHub](https://img.shields.io/docker/pulls/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20pulls&logo=docker)](https://hub.docker.com/r/goosews/scribble)
 [![Stars on DockerHub](https://img.shields.io/docker/stars/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20stars&logo=docker)](https://hub.docker.com/r/goosews/scribble)
