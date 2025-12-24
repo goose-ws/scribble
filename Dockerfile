@@ -4,25 +4,22 @@ FROM python:3.12-slim-bookworm AS builder
 # Create a virtual environment inside the builder
 RUN python -m venv /opt/venv
 
-# Update pip, create venv, and install all python packages in a single RUN layer
+# Make sure we use the venv pip
 ENV PATH="/opt/venv/bin:$PATH"
-RUN python -m venv /opt/venv && \
-    pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-        torch==2.8.0 \
-        torchaudio==2.8.0 \
-        --index-url https://download.pytorch.org/whl/cpu
-# Add flask and requests for the web uploader
-RUN pip install --no-cache-dir \
-        whisperx \
-        flask \
-        requests \
-        gunicorn
+
+# Copy the requirements file into the builder
+COPY requirements.txt /requirements.txt
+
+# Install everything from the file
+# We add --extra-index-url so pip can find the "+cpu" versions of torch defined in your txt file
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Final image
 FROM python:3.12-slim-bookworm
 
-# Update packages
+# Update system packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -31,6 +28,7 @@ RUN apt-get update && \
         unzip \
         file \
         supervisor \
+        sqlite3 \
     && rm -rf /var/lib/apt/lists/*
     
 # Copy the virtual environment from the builder stage

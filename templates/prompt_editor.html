@@ -1,55 +1,43 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prompt Editor</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 2rem; }
-        .container { max-width: 600px; margin: auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 1rem; margin-bottom: 1rem; }
-        h1 { color: #333; margin: 0; }
-        a.logout { color: #007bff; text-decoration: none; }
-        a.logout:hover { text-decoration: underline; }
-        .upload-section { margin-bottom: 1.5rem; }
-        h2 { color: #555; font-size: 1.2rem; margin-bottom: 0.5rem; }
-        form { display: flex; flex-direction: column; }
-        input[type="file"], input[type="text"] { border: 2px dashed #ddd; border-radius: 6px; padding: 2rem; text-align: center; margin-bottom: 1rem; }
-        input[type="file"] { cursor: pointer; }
-        input[type="text"]::placeholder { color: #999; }
-        .separator { text-align: center; color: #888; margin-bottom: 1rem; }
-        button { background-color: #28a745; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; transition: background-color 0.2s; }
-        button:hover { background-color: #218838; }
-        .alert { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
-        .alert.success { background-color: #d4edda; color: #155724; }
-        .alert.error { background-color: #f8d7da; color: #721c24; }
-        .alert.info { background-color: #d1ecf1; color: #0c5460; }
-        .header { display: flex; justify-content: space-between; align-items: center; ... }
-        .nav-links a { color: #007bff; text-decoration: none; margin-left: 1.5rem; }
-        .nav-links a:hover { text-decoration: underline; }
-    </style>    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>File Uploader</h1>
-            <div class="nav-links">
-                <a href="{{ url_for('status_page') }}">Status</a>
-                <a href="{{ url_for('upload_page') }}">Uploader</a>
-                <a href="{{ url_for('edit_prompt') }}">Prompt Editor</a>
-                <a href="{{ url_for('logout') }}" class="logout">Logout</a>
-            </div>
-        </div>
-        <h1>Edit Prompt File</h1>
-        <p>Modify the prompt that is sent to the Gemini API for generating session recaps.</p>
-        
-        <form action="{{ url_for('save_prompt') }}" method="post">
-          <textarea id="prompt-editor" name="prompt_text">{{ prompt_content }}</textarea>
-          <button type="submit">Save Prompt</button>
-        </form>
-    </div>
+{% extends "base.html" %}
 
+{% block title %}Prompt Editor{% endblock %}
+
+{% block header_title %}Prompt Editor{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+    <style>
+        .CodeMirror { 
+            height: 600px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            margin-bottom: 1rem;
+        }
+        button { 
+            background-color: #007bff; 
+            color: white; 
+            padding: 12px 20px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 16px; 
+        }
+        button:hover { background-color: #0056b3; }
+        p.description { color: #666; margin-bottom: 1rem; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <p class="description">Modify the system instructions (Prompt) sent to the AI for generating session recaps.</p>
+    
+    <form action="{{ url_for('save_prompt') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <textarea id="prompt-editor" name="prompt_text">{{ prompt_content }}</textarea>
+      <button type="submit"><i class="fas fa-save"></i> Save Prompt</button>
+    </form>
+{% endblock %}
+
+{% block scripts %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
     <script>
       // Initialize CodeMirror on the textarea element
@@ -59,5 +47,4 @@
         lineWrapping: true
       });
     </script>
-</body>
-</html>
+{% endblock %}

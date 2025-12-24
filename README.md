@@ -1,26 +1,34 @@
+<p align="center">
+<img src="https://github.com/goose-ws/scribble/blob/main/scribble.png?raw=true" alt="Scribble" />
+</p>
 [![Pulls on DockerHub](https://img.shields.io/docker/pulls/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20pulls&logo=docker)](https://hub.docker.com/r/goosews/scribble)
 [![Stars on DockerHub](https://img.shields.io/docker/stars/goosews/scribble.svg?style=for-the-badge&label=DockerHub%20stars&logo=docker)](https://hub.docker.com/r/goosews/scribble)
 [![Stars on GitHub](https://img.shields.io/github/stars/goose-ws/scribble.svg?style=for-the-badge&label=GitHub%20Stars&logo=github)](https://github.com/goose-ws/scribble)
 
-# ✒️ Scribble
+# Scribble
 
 An automated, AI-powered scribe to generate narrative recaps of your TTRPG sessions.
 
 ## Overview
 
-Scribble is a tool to help provide AI-powered recaps of TTRPG sessions held over Discord. It's designed to run as a continuous service in a Docker container, watching for new audio recordings and processing them automatically.
+Scribble is a tool to help provide AI-powered recaps of TTRPG sessions held over Discord. It is designed to run as a continuous service in a Docker container, watching for new audio recordings and processing them automatically.
+
+It supports multiple LLM providers (**Google Gemini**, **OpenAI**, **Anthropic Claude**, and **Ollama**) and includes a web dashboard for file management, system statistics, and session monitoring.*
+
+*\* While I can verify it works with Gemini and Ollama, there are no free API tiers for OpenAI or Anthropic, so those endpoints are untested for now.*
 
 ## How It Works
 
 The workflow is designed to be as automated as possible after the initial setup:
 
 1.  **Record Audio**: You use **[Craig](https://craig.chat/)** to record your session on Discord.
-2.  **Upload Audio**: After the session, you download the multi-track FLAC `.zip` file from Craig and drop it into a designated folder.
+2.  **Upload Audio**: After the session, you download the multi-track FLAC `.zip` file from Craig and upload it via the Scribble Web UI (or drop it into the `Sessions` folder).
 3.  **Transcribe**: Scribble detects the new file, unzips it, and uses **[whisperx](https://github.com/m-bain/whisperX)** to perform a time-accurate, speaker-separated transcription of each player's audio track.
-4.  **Summarize**: The individual transcripts are merged into a single, time-sorted master transcript. This transcript, along with a custom prompt, is sent to the **Google Gemini API**.
-5.  **Deliver**: Gemini's narrative recap is received, formatted, and posted to a **Discord channel** via a webhook.
+4.  **Summarize**: The individual transcripts are merged into a single, time-sorted master transcript. This transcript, along with a custom prompt, is sent to your configured **LLM Provider**.
+5.  **Deliver**: The AI's narrative recap is received, formatted, and posted to a **Discord channel** via a webhook.
+6.  **Track**: Detailed metrics (tokens used, estimated cost, API latency) are logged to a database and visualized on the **Statistics** page.
 
-The process is currently CPU-only. Contributions to add GPU support are welcome\!
+The process is currently CPU-only, as that is what I am hardware limited to working with/testing. Contributions to add GPU support are welcome!
 
 ## Getting Started
 
@@ -28,11 +36,11 @@ While Scribble could be installed on bare metal, the easiest way to use it is wi
 
 ### Prerequisites
 
-Before you begin, you will need three things:
+Before you begin, you will need:
 
 1.  **Craig**: Invite the [Craig bot](https://craig.chat/) to your Discord server.
-2.  **Google Gemini API Key**: Get a key from the [Google AI Studio](https://aistudio.google.com/apikey).
-3.  **Discord Webhook URL**: Create a webhook in the Discord channel where you want recaps to be posted. (Server Settings -\> Integrations -\> Webhooks -\> New Webhook).
+2.  **LLM AI Provider**: An API Key for Google Gemini, OpenAI, or Anthropic. Alternatively, a URL for a local Ollama instance.
+3.  **Discord Webhook URL**: For a **Forum-style text channel** in Discord, where you want recaps to be posted. (Server Settings -> Integrations -> Webhooks -> New Webhook).
 
 ### Quick Start
 
@@ -41,38 +49,7 @@ Before you begin, you will need three things:
     mkdir scribble-server
     cd scribble-server
     ```
-2.  Inside that directory, create a `docker-compose.yml` file with the following content:
-    ```yaml
-
-    services:
-      scribble:
-        image: goosews/scribble:latest
-        container_name: scribble
-        restart: unless-stopped
-        environment:
-          # --- Required ---
-          GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
-          DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
-          
-          # --- Optional: User/Group Mapping ---
-          PUID: "1000"
-          PGID: "1000"
-          TZ: "America/New_York"
-          WEB_PASSWORD: "YOUR_WEB_INTERFACE_PASSWORD_HERE"
-          WEB_COOKIE_KEY: "SOME_SECRET_HASH_HERE"
-          
-          # --- Optional: Whisper Performance Tuning ---
-          OUTPUT_VERBOSITY: "3"
-          WHISPER_MODEL: "large-v3"
-          WHISPER_THREADS: "24"
-          WHISPER_BATCH_SIZE: "24"
-          WHISPER_BEAM_SIZE: "3"
-          WHISPER_VAD_METHOD: "silero"
-          
-          RESPAWN_TIME: "3600" # Check for new files every hour
-        volumes:
-          - ./app:/app
-    ```
+2.  Inside that directory, create a `docker-compose.yml` file (see example below).
 3.  Create the `app` directory that you referenced in the `volumes` section:
     ```bash
     mkdir app
@@ -86,57 +63,116 @@ Before you begin, you will need three things:
       * Edit `app/sample_prompt.txt` to define the instructions for the AI.
       * When you are satisfied, **rename it to `prompt.txt`**.
 6.  **Usage**:
-      * When your TTRPG session is over, download the **multi-track FLAC zip file** from Craig.
-      * Place the entire `.zip` file into the `app/Sessions` directory.
-      * Scribble will automatically detect and process the file on its next cycle (defined by `RESPAWN_TIME`).
-      * Alternatively, `.zip` files can be uploaded (by link, or from your filesystem) via the web UI.
+      * Access the Web UI at `http://your-server-ip:12345`.
+      * Log in using the password you set in `WEB_PASSWORD`.
+      * Upload your Craig `.zip` file via the **Upload** page.
+      * Monitor progress on the **Status** page.
 
 ## Configuration
 
+### Docker Compose Example
+
+```yaml
+services:
+  scribble:
+    image: goosews/scribble:latest
+    container_name: scribble
+    restart: unless-stopped
+    ports:
+      - "12345:12345" # Flask Web UI
+    environment:
+      # --- Required ---
+      # Choose one provider: google, openai, anthropic, ollama
+      LLM_PROVIDER: "google" 
+      LLM_API_KEY: "YOUR_API_KEY_HERE"
+      LLM_MODEL: "gemini-2.5-flash"
+      DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
+
+      # --- Optional: Web UI Security ---
+      WEB_PASSWORD: "change_me"
+      WEB_COOKIE_KEY: "random_secret_string" # For session security
+
+      # --- Optional: Cost Tracking (Per Million Tokens) ---
+      TOKEN_COST_INPUT: "0.075"   # Example cost per 1M input tokens
+      TOKEN_COST_OUTPUT: "0.30"   # Example cost per 1M output tokens
+
+      # --- Optional: Whisper Performance Tuning ---
+      OUTPUT_VERBOSITY: "3"
+      WHISPER_MODEL: "large-v3"
+      WHISPER_THREADS: "24"
+      WHISPER_BATCH_SIZE: "24"
+      
+      RESPAWN_TIME: "3600" # Check for new files every hour
+    volumes:
+      - ./app:/app
+
+```
+
 ### Environment Variables
 
+#### General
+
 | Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `GEMINI_API_KEY` | **Yes** | `""` | Your API key for the Google Gemini service. |
-| `DISCORD_WEBHOOK` | **Yes** | `""` | The URL for the Discord webhook that will post the recap. |
-| `PUID` | No | `0` | The User ID for file permissions. Match to your host user. |
-| `PGID` | No | `0` | The Group ID for file permissions. Match to your host group. |
-| `TZ` | No | `Etc/UTC`| Your local timezone (e.g., `America/New_York`). |
-| `WEB_PASSWORD` | No | (random string) | Password for the web UI. |
-| `WEB_COOKIE_KEY` | No | (random string) | Hash for cookies, highly recommended to be set if using web UI. |
-| `RESPAWN_TIME` | No | `3600` | Time in seconds to wait between checking for new files. |
+| --- | --- | --- | --- |
+| `DISCORD_WEBHOOK` | **Yes** | `(not set)` | The URL for the Discord webhook. |
+| `PUID` / `PGID` | No | `0` | User/Group ID for file permissions. |
+| `TZ` | No | `Etc/UTC` | Local timezone. |
+| `RESPAWN_TIME` | No | `3600` | Wait time (seconds) between processing cycles. |
 | `OUTPUT_VERBOSITY` | No | `3` | `1`: Errors, `2`: Warnings, `3`: Info, `4`: Verbose. |
-| `WHISPER_MODEL` | No | `large-v3` | The whisper model to use (e.g., `medium.en`, `base.en`). |
-| `WHISPER_THREADS` | No | (all) | Number of CPU threads for whisperx to use. |
-| `WHISPER_BATCH_SIZE`| No | `8` | Processes multiple audio chunks in parallel. `24` is a good starting point for high-thread CPUs. |
-| `WHISPER_BEAM_SIZE` | No | `5` | `1` is fastest but may be less accurate. `3` may be a good balance. |
-| `WHISPER_CHUNK_SIZE`| No | `30` | Time in seconds to merge VAD segments. |
-| `WHISPER_VAD_METHOD`| No | `pyannote` | VAD method. `silero` may be significantly faster on CPU. |
-| `WHISPER_VAD_ONSET` | No | `0.5` | Voice activity detection onset threshold. |
-| `WHISPER_VAD_OFFSET`| No | `0.363` | Voice activity detection offset threshold. |
-| `WHISPER_LANGUAGE` | No | `en` | Two-letter language code for the audio. |
-| `WHISPER_COMPUTE_TYPE`| No | `int8` | `int8` is recommended for CPU inference. |
+| `KEEP_AUDIO` | No | `true` | Set to `false` to delete FLAC files after processing. |
 
-If you wish to use SSL with the web UI, there is an included `nginx.conf` sample server block you could use to proxy SSL via nginx.
+#### LLM Configuration
 
-### Volumes
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `LLM_PROVIDER` | **Yes** | `(not set)` | `google`, `openai`, `anthropic`, or `ollama`. |
+| `LLM_API_KEY` | **Yes** | `(not set)` | API Key (Required for cloud providers). |
+| `LLM_MODEL` | **Yes** | `(not set)` | Model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`). |
+| `OLLAMA_URL` | *If Ollama* | `(not set)` | Full URL to Ollama instance (e.g., `http://192.168.1.50:11434`). |
+| `TOKEN_COST_INPUT` | No | `0` | Cost in USD per 1 Million input tokens (for stats). |
+| `TOKEN_COST_OUTPUT` | No | `0` | Cost in USD per 1 Million output tokens (for stats). |
 
-  * `- ./app:/app`: This is the main data directory.
-      * **`app/prompt.txt`**: This is where you place your prompt file.
-      * **`app/Sessions/`**: This is where you drop the `.zip` files from Craig.
-      * The container will write all working files and final transcripts into subdirectories within `app/Sessions/`.
+#### Web UI
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `WEB_PASSWORD` | No | (random) | Password for the web interface. |
+| `WEB_COOKIE_KEY` | No | (random) | Secret key for Flask sessions. |
+
+#### Whisper Tuning
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WHISPER_MODEL` | `large-v3` | The whisper model to use. |
+| `WHISPER_THREADS` | (all) | Number of CPU threads for whisperx. |
+| `WHISPER_BATCH_SIZE` | `8` | Parallel processing batch size. |
+| `WHISPER_BEAM_SIZE` | `5` | Beam search size (1-5). |
+| `WHISPER_VAD_METHOD` | `pyannote` | `silero` is faster, `pyannote` is more accurate. |
+| `WHISPER_COMPUTE_TYPE` | `int8` | Quantization type (int8 recommended for CPU). |
+
+## Features
+
+* **Multi-Provider Support**: Switch easily between Gemini, OpenAI, Claude, or local Ollama models.
+* **Web Dashboard**:
+* **Upload**: Drag-and-drop or URL upload for session zips.
+* **Status**: View progress bars, read logs, and download transcripts.
+* **Statistics**: Visualize token usage, costs, and API latency over time.
+* **Prompt Editor**: Edit the system prompt directly from the browser.
+
+* **Session Management**:
+* Retry specific steps (Re-Transcribe, Re-Build Transcript, Re-Generate Recap) with a single click.
+* Automatic file cleanup (optional).
 
 ## Performance Reference
 
-Processing can be very time-consuming. For context, a 2-hour 30-minute session with 6 total speakers took **just under 7 hours** to transcribe on the following hardware:
+Processing is CPU-intensive. On a dual Intel E5-2670 system (24 threads), a 2.5-hour session with 6 speakers takes approximately **7 hours** to fully transcribe using `large-v3`.
 
-  * **Motherboard**: SuperMicro X9DR3-LN4F+
-  * **CPU**: Dual Intel E5-2670
-  * **RAM**: 96 GB 1066 MHz DDR3
-  * **Storage**: 512 GB NVMe SSD
+## TODO
+
+* Move from state based processing to action based processing
+* Add GPU support for WhisperX
 
 ## License
 
-The original code for this project (including the `Dockerfile` and `scribble.bash` script) is licensed under the **MIT License**.
-
-This project relies on `whisperx`, which is a separate project distributed under the **BSD-2-Clause License**. To comply with its license, the original copyright notice for `whisperx` must be retained. You can find the full license for `whisperx` at its GitHub repository: [https://github.com/m-bain/whisperX](https://github.com/m-bain/whisperX).
+The original code for this project is licensed under the **MIT License**.
+This project relies on `whisperx`, which is distributed under the **BSD-2-Clause License**.

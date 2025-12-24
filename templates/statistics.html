@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics{% endblock %}
+
+{% block header_title %}System Analytics{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Stats Grid & Cards */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+    .stat-card { background: #fff; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .stat-value { font-size: 2rem; font-weight: bold; color: #007bff; margin: 0.5rem 0; }
+    .stat-label { color: #666; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Charts */
+    .chart-container { background: #fff; padding: 1.5rem; border-radius: 8px; border: 1px solid #eee; margin-bottom: 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .chart-title { margin-bottom: 1rem; color: #333; font-weight: 600; font-size: 1.1rem; }
+    
+    /* Tables */
+    .table-container { overflow-x: auto; background: #fff; border-radius: 8px; border: 1px solid #eee; margin-top: 2rem; }
+    table { width: 100%; border-collapse: collapse; min-width: 600px; }
+    th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background-color: #f8f9fa; font-weight: 600; color: #495057; }
+    tr:hover { background-color: #f1f3f5; }
+
+    /* Badges */
+    .provider-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+    .badge-Gemini { background-color: #e8f0fe; color: #1a73e8; }
+    .badge-OpenAI { background-color: #e6fffa; color: #047481; }
+    .badge-Anthropic { background-color: #fff5f5; color: #c53030; }
+    .badge-Ollama { background-color: #fff0db; color: #b95000; }
+    
+    /* Cost Breakdown Grid */
+    .cost-grid { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem;}
+    .cost-item { flex: 1; padding: 1rem; background: #fafafa; border: 1px solid #eee; border-radius: 6px; min-width: 140px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Total Spend</div>
+            <div class="stat-value">${{ "%.4f"|format(grand_total_cost) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Total Tokens</div>
+            <div class="stat-value">{{ "{:,}".format(grand_total_tokens) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Active Providers</div>
+            <div class="stat-value">{{ summary|length }}</div>
+        </div>
+    </div>
+
+    <div class="cost-grid">
+        {% for row in summary %}
+        <div class="cost-item">
+            <div style="margin-bottom:0.5rem;"><span class="provider-badge badge-{{ row['provider'] }}">{{ row['provider'] }}</span></div>
+            <div style="font-size:0.9rem; color:#555;">Cost: <strong>${{ "%.4f"|format(row['total_cost'] or 0) }}</strong></div>
+            <div style="font-size:0.9rem; color:#555;">Tokens: <strong>{{ "{:,}".format(row['total_tokens'] or 0) }}</strong></div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-title">Requests Per Minute (Last Hour)</div>
+        <canvas id="chartRPM"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-title">Input Tokens Per Minute (Last Hour)</div>
+        <canvas id="chartTPM"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-title">Requests Per Day (Last 30 Days)</div>
+        <canvas id="chartRPD"></canvas>
+    </div>
+
+    <h3>Recent Activity Log</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Provider</th>
+                    <th>Model</th>
+                    <th>Duration</th>
+                    <th>Tokens</th>
+                    <th>Cost</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in recent_logs %}
+                <tr>
+                    <td>{{ log['request_timestamp'] }}</td>
+                    <td><span class="provider-badge badge-{{ log['provider'] }}">{{ log['provider'] }}</span></td>
+                    <td>{{ log['model_name'] }}</td>
+                    <td>{{ log['duration_seconds'] }}s</td>
+                    <td>{{ "{:,}".format(log['total_token_count']) }}</td>
+                    <td>${{ "%.5f"|format(log['cost']) }}</td>
+                    <td>{{ log['finish_reason'] }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 2rem; color: #777;">
+                        No activity logs found in database.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- Data passed from Flask ---
+    const rpmData = {{ rpm_data | tojson }};
+    const tpmData = {{ tpm_data | tojson }};
+    const rpdData = {{ rpd_data | tojson }};
+
+    // --- Color Palette for Providers ---
+    const colors = {
+        'Gemini': { border: '#1a73e8', bg: 'rgba(26, 115, 232, 0.1)' },
+        'OpenAI': { border: '#10a37f', bg: 'rgba(16, 163, 127, 0.1)' },
+        'Anthropic': { border: '#d97757', bg: 'rgba(217, 119, 87, 0.1)' },
+        'Ollama': { border: '#333333', bg: 'rgba(51, 51, 51, 0.1)' }
+    };
+
+    function createDatasets(datasetsObj) {
+        return Object.keys(datasetsObj).map(provider => ({
+            label: provider,
+            data: datasetsObj[provider],
+            borderColor: colors[provider]?.border || '#888',
+            backgroundColor: colors[provider]?.bg || '#eee',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true
+        }));
+    }
+
+    // --- RPM Chart ---
+    new Chart(document.getElementById('chartRPM'), {
+        type: 'line',
+        data: {
+            labels: rpmData.labels,
+            datasets: createDatasets(rpmData.datasets)
+        },
+        options: { 
+            responsive: true,
+            scales: { y: { beginAtZero: true, title: {display: true, text: 'Requests'} } }
+        }
+    });
+
+    // --- TPM Chart ---
+    new Chart(document.getElementById('chartTPM'), {
+        type: 'line',
+        data: {
+            labels: tpmData.labels,
+            datasets: createDatasets(tpmData.datasets)
+        },
+        options: { 
+            responsive: true,
+            scales: { y: { beginAtZero: true, title: {display: true, text: 'Input Tokens'} } }
+        }
+    });
+
+    // --- RPD Chart ---
+    new Chart(document.getElementById('chartRPD'), {
+        type: 'bar',
+        data: {
+            labels: rpdData.labels,
+            datasets: createDatasets(rpdData.datasets)
+        },
+        options: { 
+            responsive: true,
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+</script>
+{% endblock %}
