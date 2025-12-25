@@ -163,26 +163,36 @@ function graceful_shutdown {
 }
 
 function sqDb {
-if [[ -z "${1}" ]]; then
-    return 1
-fi
-local sqOutput sqExit
-# Log the command we're executing to the database, for development purposes
-# Execute the command
-sqOutput="$(sqlite3 "${sqliteDb}" "${1}" 2>&1)"
-sqExit="${?}"
-if [[ "${sqExit}" -eq "0" ]]; then
-    if [[ -n "${sqOutput}" ]]; then
-        echo "${sqOutput}"
+    if [[ -z "${1}" ]]; then
+        return 1
     fi
-    return 0
-else
-    sqlite3 "${sqliteDb}" "INSERT INTO sqLog (TIME, COMMAND, OUTPUT) VALUES ('$(date)', '${1//\'/\'\'}', '[Exit Code: ${sqExit}] ${sqOutput//\'/\'\'}');"
-    if [[ -n "${sqOutput}" ]]; then
-        echo "${sqOutput}"
+    local sqOutput sqExit
+    
+    # FIX: Pass ${1} into sqlite3 via stdin (<<<) instead of as an argument.
+    # This bypasses the ARG_MAX limit for large JSON payloads.
+    sqOutput="$(sqlite3 "${sqliteDb}" <<< "${1}" 2>&1)"
+    sqExit="${?}"
+    
+    if [[ "${sqExit}" -eq "0" ]]; then
+        if [[ -n "${sqOutput}" ]]; then
+            echo "${sqOutput}"
+        fi
+        return 0
+    else
+        # Prepare the log query
+        # We must escape single quotes in the output/command for the log SQL wrapper
+        local safeCommand="${1//\'/\'\'}"
+        local safeOutput="${sqOutput//\'/\'\'}"
+        local logQuery="INSERT INTO sqLog (TIME, COMMAND, OUTPUT) VALUES ('$(date)', '${safeCommand}', '[Exit Code: ${sqExit}] ${safeOutput}');"
+
+        # FIX: Also pass the logging query via stdin, or this will fail too
+        sqlite3 "${sqliteDb}" <<< "${logQuery}"
+        
+        if [[ -n "${sqOutput}" ]]; then
+            echo "${sqOutput}"
+        fi
+        return 1
     fi
-    return 1
-fi
 }
 
 function calculateTokenCost {
@@ -275,7 +285,7 @@ function sendPromptGoogle {
     local httpCode
     httpCode="$(curl -s \
       -w "%{http_code}" \
-      -o "${workDir}/response_LLM.json" \
+      -o "${workDir}/response.json" \
       -X POST \
       -H "Content-Type: application/json" \
       "https://generativelanguage.googleapis.com/v1beta/models/${LLM_MODEL}:streamGenerateContent?key=${LLM_API_KEY}" \
@@ -303,8 +313,8 @@ function sendPromptGoogle {
         return 1
     fi
 
-    apiResponse="$(<"${workDir}/response_LLM.json")"
-    rm -f "${workDir}/response_LLM.json" "${workDir}/request.json"
+    apiResponse="$(<"${workDir}/response.json")"
+    rm -f "${workDir}/response.json" "${workDir}/request.json"
 
     # 2. Handle API Errors
     local apiErrorCode
@@ -338,12 +348,16 @@ function sendPromptGoogle {
     finishReason="$(jq -r ".[-1].candidates[0].finishReason // \"unknown\"" <<<"${apiResponse}")"
 
     local safeRequest safeResponse
-    safeRequest="${requestJsonContent//\'/\'\'}"
+    safeRequest="${requestJsonContent}"
+    safeResponse="${apiResponse}"
+    if [[ "${SAVE_DB_SPACE}" -eq "true" ]]; then
+        safeRequest="$(jq '.contents[].parts[].inlineData.data = "[truncated]"' <<<"${safeRequest}")"
+        safeResponse="$(jq '.[].thoughtSignature = "[truncated]"' <<<"${safeResponse}")"
+    fi
     
-    # Optional: Remove thoughtSignature from DB log to save space (uncomment if desired)
-    # apiResponse="$(jq 'del(.[].thoughtSignature)' <<<"${apiResponse}")"
-    safeResponse="${apiResponse//\'/\'\'}"
-
+    safeRequest="${safeRequest//\'/\'\'}"
+    safeResponse="${safeResponse//\'/\'\'}"
+    
     sqDb "INSERT INTO gemini_logs (
         model_name, 
         prompt_token_count, 
@@ -460,7 +474,7 @@ function sendPromptOpenAI {
     # Note: Keeping your specified /v1/responses endpoint
     httpCode="$(curl -s \
         -w "%{http_code}" \
-        -o "${workDir}/response_LLM.json" \
+        -o "${workDir}/response.json" \
         "https://api.openai.com/v1/responses" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${LLM_API_KEY}" \
@@ -484,13 +498,13 @@ function sendPromptOpenAI {
 
     # 1. Handle Curl Errors (Network/DNS)
     if [[ "${curlExitCode}" -ne "0" ]]; then
-        printOutput "1" "Curl returned non-zero exit code [${curlExitCode}] -- See 'response_LLM.json' for more"
+        printOutput "1" "Curl returned non-zero exit code [${curlExitCode}] -- See 'response.json' for more"
         sqDb "INSERT INTO openai_logs (model_name, request_timestamp, request_epoch, duration_seconds, request_json, finish_reason) VALUES ('${LLM_MODEL}', '$(date '+%Y-%m-%d %H:%M:%S')', $(date +%s), ${durationSeconds}, '${requestJsonContent//\'/\'\'}', 'CURL_ERROR_${curlExitCode}');"
         return 1
     fi
 
-    apiResponse="$(<"${workDir}/response_LLM.json")"
-    rm -f "${workDir}/response_LLM.json" "${workDir}/request.json"
+    apiResponse="$(<"${workDir}/response.json")"
+    rm -f "${workDir}/response.json" "${workDir}/request.json"
 
     # 2. Handle API Errors (JSON)
     local apiErrorMessage
@@ -634,7 +648,7 @@ function sendPromptOllama {
     # Capture HTTP code and Body
     httpCode="$(curl -s \
       -w "%{http_code}" \
-      -o "${workDir}/response_LLM.json" \
+      -o "${workDir}/response.json" \
       "${targetUrl}" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer ${LLM_API_KEY}" \
@@ -663,8 +677,8 @@ function sendPromptOllama {
         return 1
     fi
 
-    apiResponse="$(<"${workDir}/response_LLM.json")"
-    rm -f "${workDir}/response_LLM.json" "${jsonBodyFile}"
+    apiResponse="$(<"${workDir}/response.json")"
+    rm -f "${workDir}/response.json" "${jsonBodyFile}"
 
     # 2. Handle API Errors (JSON)
     # Check for standard OpenAI-style error OR Ollama 'error' field
@@ -750,63 +764,97 @@ function sendPromptOllama {
 }
 
 function sendPromptAnthropic {
-    # Create a temporary file to hold the message content parts.
-    partsFile="$(mktemp)"
-
-    # Set the correct base64 command based on OS.
-    declare -a base64_cmd
-    if [[ "$(uname)" == "Darwin" ]]; then
-        base64_cmd=(base64 -i)
-    else
-        base64_cmd=(base64 -w 0)
-    fi
-
-    # 1. Prepare the File Attachment (The "Document" Block)
-    if [[ -f "${inputFile}" ]]; then
-        mimeType=$(file --brief --mime-type "${inputFile}")
-        printOutput "4" "Processing file: ${inputFile} [MIME: ${mimeType}]"
-
-        # Base64 encode and format into the Anthropic 'document' structure
-        "${base64_cmd[@]}" "${inputFile}" | jq -R -s \
-            --arg mime "${mimeType}" \
-            '{
-                type: "document",
-                source: {
-                    type: "base64",
-                    media_type: $mime,
-                    data: .
-                }
-            }' > "${partsFile}"
-    else
+    # 1. Upload the file first
+    if [[ ! -f "${inputFile}" ]]; then
         printOutput "1" "Input file not found: ${inputFile}"
         return 1
     fi
 
-    # 2. Prepare the Prompt (The "Text" Block)
+    local mimeType
+    mimeType=$(file --brief --mime-type "${inputFile}")
+    printOutput "4" "Uploading file: ${inputFile} [MIME: ${mimeType}]"
+
+    local startTime endTime
+    startTime="$(($(date +%s%N)/1000000))"
+
+    printOutput "5" "Executing curl call to upload file"
+    
+    local httpCode
+    httpCode="$(curl -s \
+        -w "%{http_code}" \
+        -o "${workDir}/upload_response.json" \
+        "https://api.anthropic.com/v1/files" \
+        -H "x-api-key: ${LLM_API_KEY}" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "anthropic-beta: files-api-2025-04-14" \
+        -F "file=@${inputFile}" 2>/dev/null)"
+
+    local curlExitCode="${?}"
+    endTime="$(($(date +%s%N)/1000000))"
+    
+    local uploadTimeDiff
+    uploadTimeDiff="$(timeDiff "${startTime}")"
+    printOutput "3" "File upload complete -- Took ${uploadTimeDiff} [HTTP: ${httpCode}]"
+
+    if [[ "${curlExitCode}" -ne "0" ]]; then
+        printOutput "1" "Curl returned non-zero exit code [${curlExitCode}]"
+        sqDb "INSERT INTO anthropic_logs (model_name, request_timestamp, request_epoch, duration_seconds, request_json, finish_reason) VALUES ('${LLM_MODEL}', '$(date '+%Y-%m-%d %H:%M:%S')', $(date +%s), ${durationSeconds}, '${requestJsonContent//\'/\'\'}', 'CURL_ERROR_${curlExitCode}');"
+        return 1
+    fi
+
+    local uploadResponse
+    uploadResponse="$(<"${workDir}/upload_response.json")"
+    
+    printOutput "5" "Upload response:"
+    while read -r line; do
+        printOutput "5" "${line}"
+    done < "${workDir}/upload_response.json"
+
+    # Extract the file_id
+    local fileId
+    fileId="$(jq -r ".id // empty" <<<"${uploadResponse}")"
+    
+    if [[ -z "${fileId}" ]]; then
+        local errorMsg
+        errorMsg="$(jq -r ".error.message // \"Unknown error\"" <<<"${uploadResponse}")"
+        printOutput "1" "Failed to upload file: ${errorMsg}"
+        rm -f "${workDir}/upload_response.json"
+        return 1
+    fi
+
+    printOutput "3" "File uploaded successfully with ID: ${fileId}"
+    rm -f "${workDir}/upload_response.json"
+
+    # 2. Prepare the prompt text
     promptText="$(<"${PROMPT_FILE}")"
 
-    # Append the text part to the parts file
-    jq -n --arg text "${promptText}" \
-        '{
-            type: "text",
-            text: $text
-        }' >> "${partsFile}"
-
-    # 3. Construct the Final JSON Body
-    # We slurp the partsFile into the "content" array of the user message
-    jq -n --slurpfile content_array "${partsFile}" \
+    # 3. Construct the JSON body with file reference
+    jq -n \
         --arg model "${LLM_MODEL}" \
+        --arg fileId "${fileId}" \
+        --arg text "${promptText}" \
         '{
             model: $model,
-            max_tokens: 1000,
+            max_tokens: 1024,
             messages: [
                 {
                     role: "user",
-                    content: $content_array
+                    content: [
+                        {
+                            type: "text",
+                            text: $text
+                        },
+                        {
+                            type: "document",
+                            source: {
+                                type: "file",
+                                file_id: $fileId
+                            }
+                        }
+                    ]
                 }
             ]
         }' > "${workDir}/request.json"
-    rm -f "${partsFile}"
 
     local requestJsonContent
     requestJsonContent="$(<"${workDir}/request.json")"
@@ -814,20 +862,21 @@ function sendPromptAnthropic {
     # 4. Execute the API Call
     printOutput "3" "Initiating Anthropic API call"
     
-    local startTime endTime
     startTime="$(($(date +%s%N)/1000000))"
 
-    local httpCode
+    printOutput "5" "Executing curl call [curl -s -w \"%{http_code}\" -o \"${workDir}/response.json\" \"https://api.anthropic.com/v1/messages\" -H \"Content-Type: application/json\" -H \"x-api-key: ${LLM_API_KEY}\" -H \"anthropic-version: 2023-06-01\" -H \"anthropic-beta: files-api-2025-04-14\" -d \"@${workDir}/request.json\"]"
+    
     httpCode="$(curl -s \
         -w "%{http_code}" \
-        -o "${workDir}/response_LLM.json" \
+        -o "${workDir}/response.json" \
         "https://api.anthropic.com/v1/messages" \
         -H "Content-Type: application/json" \
         -H "x-api-key: ${LLM_API_KEY}" \
         -H "anthropic-version: 2023-06-01" \
+        -H "anthropic-beta: files-api-2025-04-14" \
         -d "@${workDir}/request.json" 2>/dev/null)"
 
-    local curlExitCode="${?}"
+    curlExitCode="${?}"
     endTime="$(($(date +%s%N)/1000000))"
 
     local durationMs
@@ -842,6 +891,7 @@ function sendPromptAnthropic {
 
     apiTimeDiff="$(timeDiff "${startTime}")"
     printOutput "3" "Anthropic API call complete -- Took ${apiTimeDiff} [HTTP: ${httpCode}]"
+    
 
     # 5. Handle Curl Errors
     if [[ "${curlExitCode}" -ne "0" ]]; then
@@ -850,8 +900,8 @@ function sendPromptAnthropic {
         return 1
     fi
 
-    apiResponse="$(<"${workDir}/response_LLM.json")"
-    rm -f "${workDir}/response_LLM.json" "${workDir}/request.json"
+    apiResponse="$(<"${workDir}/response.json")"
+    rm -f "${workDir}/response.json" "${workDir}/request.json"
 
     # 6. Check for API Errors (JSON)
     local apiErrorType
@@ -936,124 +986,127 @@ function sendPromptAnthropic {
 baseDir="/app/Sessions"
 sqliteDb="/app/api.db"
 
-sqlite3 "${sqliteDb}" <<EOF
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
+if ! [[ -f "${sqliteDb}" ]]; then
+    sqlite3 "${sqliteDb}" <<EOF
+    PRAGMA foreign_keys = ON;
+    PRAGMA journal_mode = WAL;
 
--- ==========================================
--- 1. GEMINI
--- ==========================================
-CREATE TABLE IF NOT EXISTS gemini_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model_name TEXT,
-    prompt_token_count INTEGER,
-    thought_token_count INTEGER,
-    output_token_count INTEGER,
-    total_token_count INTEGER,
-    cost REAL,
-    request_timestamp TEXT,
-    request_epoch INTEGER,
-    duration_seconds REAL,
-    finish_reason TEXT,
-    http_status_code INTEGER,
-    request_json TEXT,
-    response_json TEXT
-);
+    -- ==========================================
+    -- 1. GEMINI
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS gemini_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT,
+        prompt_token_count INTEGER,
+        thought_token_count INTEGER,
+        output_token_count INTEGER,
+        total_token_count INTEGER,
+        cost REAL,
+        request_timestamp TEXT,
+        request_epoch INTEGER,
+        duration_seconds REAL,
+        finish_reason TEXT,
+        http_status_code INTEGER,
+        request_json TEXT,
+        response_json TEXT
+    );
 
--- ==========================================
--- 2. OPENAI
--- ==========================================
-CREATE TABLE IF NOT EXISTS openai_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model_name TEXT,
-    prompt_token_count INTEGER,
-    thought_token_count INTEGER,
-    output_token_count INTEGER,
-    total_token_count INTEGER,
-    cost REAL,
-    request_timestamp TEXT,
-    request_epoch INTEGER,
-    duration_seconds REAL,
-    finish_reason TEXT,
-    http_status_code INTEGER,
-    request_json TEXT,
-    response_json TEXT
-);
+    -- ==========================================
+    -- 2. OPENAI
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS openai_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT,
+        prompt_token_count INTEGER,
+        thought_token_count INTEGER,
+        output_token_count INTEGER,
+        total_token_count INTEGER,
+        cost REAL,
+        request_timestamp TEXT,
+        request_epoch INTEGER,
+        duration_seconds REAL,
+        finish_reason TEXT,
+        http_status_code INTEGER,
+        request_json TEXT,
+        response_json TEXT
+    );
 
--- ==========================================
--- 3. OLLAMA
--- ==========================================
-CREATE TABLE IF NOT EXISTS ollama_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model_name TEXT,
-    prompt_token_count INTEGER,
-    thought_token_count INTEGER,
-    output_token_count INTEGER,
-    total_token_count INTEGER,
-    cost REAL,
-    request_timestamp TEXT,
-    request_epoch INTEGER,
-    duration_seconds REAL,
-    finish_reason TEXT,
-    http_status_code INTEGER,
-    request_json TEXT,
-    response_json TEXT
-);
+    -- ==========================================
+    -- 3. OLLAMA
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS ollama_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT,
+        prompt_token_count INTEGER,
+        thought_token_count INTEGER,
+        output_token_count INTEGER,
+        total_token_count INTEGER,
+        cost REAL,
+        request_timestamp TEXT,
+        request_epoch INTEGER,
+        duration_seconds REAL,
+        finish_reason TEXT,
+        http_status_code INTEGER,
+        request_json TEXT,
+        response_json TEXT
+    );
 
--- ==========================================
--- 4. ANTHROPIC
--- ==========================================
-CREATE TABLE IF NOT EXISTS anthropic_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    model_name TEXT,
-    prompt_token_count INTEGER,
-    thought_token_count INTEGER,
-    output_token_count INTEGER,
-    total_token_count INTEGER,
-    cost REAL,
-    request_timestamp TEXT,
-    request_epoch INTEGER,
-    duration_seconds REAL,
-    finish_reason TEXT,
-    http_status_code INTEGER,
-    request_json TEXT,
-    response_json TEXT
-);
+    -- ==========================================
+    -- 4. ANTHROPIC
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS anthropic_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT,
+        prompt_token_count INTEGER,
+        thought_token_count INTEGER,
+        output_token_count INTEGER,
+        total_token_count INTEGER,
+        cost REAL,
+        request_timestamp TEXT,
+        request_epoch INTEGER,
+        duration_seconds REAL,
+        finish_reason TEXT,
+        http_status_code INTEGER,
+        request_json TEXT,
+        response_json TEXT
+    );
 
--- ==========================================
--- 5. Discord
--- ==========================================
-CREATE TABLE IF NOT EXISTS discord_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message_id TEXT,
-    channel_id TEXT,
-    author_username TEXT,
-    content TEXT,
-    discord_timestamp TEXT,
-    request_timestamp TEXT,
-    request_epoch INTEGER,
-    duration_seconds REAL,
-    http_status_code INTEGER,
-    request_json TEXT,
-    response_json TEXT
-);
+    -- ==========================================
+    -- 5. Discord
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS discord_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        message_id TEXT,
+        channel_id TEXT,
+        author_username TEXT,
+        content TEXT,
+        discord_timestamp TEXT,
+        request_timestamp TEXT,
+        request_epoch INTEGER,
+        duration_seconds REAL,
+        http_status_code INTEGER,
+        request_json TEXT,
+        response_json TEXT
+    );
 
--- ==========================================
--- 6. DB log
--- ==========================================
-CREATE TABLE IF NOT EXISTS sqLog (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    TIME TEXT,
-    COMMAND TEXT,
-    OUTPUT TEXT
-);
+    -- ==========================================
+    -- 6. DB log
+    -- ==========================================
+    CREATE TABLE IF NOT EXISTS sqLog (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        TIME TEXT,
+        COMMAND TEXT,
+        OUTPUT TEXT
+    );
 EOF
-
-if [[ -f "${sqliteDb}" ]]; then
-    printOutput "3" "Initialized database"
+    if [[ -f "${sqliteDb}" ]]; then
+        printOutput "3" "Initialized database"
+    else
+        printOutput "1" "Failed to initialize database"
+        exit 1
+    fi
 else
-    printOutput "1" "Failed to initialize database"
-    exit 1
+    printOutput "5" "Verified DB presence"
 fi
 
 if ! [[ -d "${baseDir}" ]]; then
@@ -1223,10 +1276,11 @@ if [[ -z "${KEEP_AUDIO}" ]]; then
     # Default to true (safe) if not specified
     KEEP_AUDIO="true"
 fi
-if [[ "${KEEP_AUDIO}" != "true" && "${KEEP_AUDIO}" != "false" ]]; then
+if [[ "${KEEP_AUDIO,,}" != "true" && "${KEEP_AUDIO,,}" != "false" ]]; then
     printOutput "2" "Invalid value for KEEP_AUDIO [${KEEP_AUDIO}] -- Setting to [true]"
     KEEP_AUDIO="true"
 else
+    KEEP_AUDIO="${KEEP_AUDIO,,}"
     printOutput "5" "Validated KEEP_AUDIO value [${KEEP_AUDIO}]"
 fi
 
@@ -1281,6 +1335,18 @@ if ! [[ "${RESPAWN_TIME}" =~ ^[0-9]+$ ]]; then
     RESPAWN_TIME="3600"
 else
     printOutput "5" "Validated respawn time [${RESPAWN_TIME}]"
+fi
+
+# Set the default save DB size option
+if [[ "${SAVE_DB_SPACE,,}" == "true" ]]; then
+    printOutput "5" "Validated save DB space as [true]"
+    SAVE_DB_SPACE="${SAVE_DB_SPACE,,}"
+elif [[ "${SAVE_DB_SPACE}" == "false" ]]; then
+    printOutput "5" "Validated save DB space as [false]"
+    SAVE_DB_SPACE="${SAVE_DB_SPACE,,}"
+else
+    printOutput "1" "Invliad save DB space option [${SAVE_DB_SPACE}] -- Setting to [true]"
+    SAVE_DB_SPACE="true"
 fi
 
 # Trap SIGINT (Ctrl+C) and SIGTERM (docker stop)
@@ -1406,9 +1472,14 @@ while [[ -z "${shutdown_requested}" ]]; do
             printOutput "5" "Skipping completed session [${workDir}]"
             continue
         fi
+        printOutput "5" "Iterating through [${workDir}]"
         
         # Define our session log
         sessionLog="${workDir}/session.log"
+        printOutput "5" "Session log [${sessionLog}]"
+        # Define our session date
+        sessionDate="${workDir##*/}"
+        printOutput "5" "Isolated session date [${sessionDate}]"
         
         # Remove raw.dat if it exists.
         if [[ -e "${workDir}/raw.dat" ]]; then
@@ -1597,8 +1668,9 @@ while [[ -z "${shutdown_requested}" ]]; do
             while [[ "${summary}" =~ .*$'\n\n\n'.* ]]; do
                 summary="${summary//$'\n\n\n'/$'\n\n'}"
             done
-            formatted_date=$(date -d "${sessionDate}" +"%B %-d, %Y")
-            summary="## ${formatted_date} Session Recap"$'\n\n'"🤖 LLM Provider: \`${LLM_PROVIDER}\`"$'\n'"📋 Model: \`${LLM_MODEL}\`"$'\n'"⌚ API time: \`${apiTimeDiff}\`"$'\n'"🧾 Tokens: \`${tokensIn} in | ${tokensOut} out | ${totalTokenCount} total\`"$'\n\n'"${summary}"
+            formattedDate=$(date -d "${sessionDate}" +"%B %-d, %Y")
+            printOutput "5" "Created formatted date [${formattedDate}] from session date [${sessionDate}]"
+            summary="## ${formattedDate} Session Recap"$'\n\n'"🤖 LLM Provider: \`${LLM_PROVIDER}\`"$'\n'"📋 Model: \`${LLM_MODEL}\`"$'\n'"⌚ API time: \`${apiTimeDiff}\`"$'\n'"🧾 Tokens: \`${tokensIn} in | ${tokensOut} out | ${totalTokenCount} total\`"$'\n\n'"${summary}"
 
             printOutput "3" "Summary successfully generated:"
             printOutput "4" "------------------------------------------------------------------"
@@ -1638,7 +1710,7 @@ while [[ -z "${shutdown_requested}" ]]; do
             done <<< "${summary}"$'\n\n'
             
             # 1. Define the Thread Title
-            threadTitle="${formatted_date} Session Recap"
+            threadTitle="${formattedDate} Session Recap"
             
             # 2. Start the thread.
             # We send a "Starter" message. This creates the thread in a Forum Channel.

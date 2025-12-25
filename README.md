@@ -12,9 +12,9 @@ An automated, AI-powered scribe to generate narrative recaps of your TTRPG sessi
 
 Scribble is a tool to help provide AI-powered recaps of TTRPG sessions held over Discord. It is designed to run as a continuous service in a Docker container, watching for new audio recordings and processing them automatically.
 
-It supports multiple LLM providers (**Google Gemini**, **OpenAI**, **Anthropic Claude**, and **Ollama**) and includes a web dashboard for file management, system statistics, and session monitoring.*
+It supports multiple LLM providers (**Google (Gemini)**, **OpenAI (ChatGPT)**\*, **Anthropic (Claude)**, and **Ollama**) and includes a web dashboard for file management, system statistics, and session monitoring.
 
-*\* While I can verify it works with Gemini and Ollama, there are no free API tiers for OpenAI or Anthropic, so those endpoints are untested for now.*
+*\* While I can verify it works with Gemini, Anthropic, and Ollama, there are no free API for OpenAI, so that endpoints is untested for now. Big thanks to @SnoFox for help testing the Anthropic API endpoint.*
 
 ## How It Works
 
@@ -119,6 +119,7 @@ services:
 | `RESPAWN_TIME` | No | `3600` | Wait time (seconds) between processing cycles. |
 | `OUTPUT_VERBOSITY` | No | `3` | `1`: Errors, `2`: Warnings, `3`: Info, `4`: Verbose. |
 | `KEEP_AUDIO` | No | `true` | Set to `false` to delete FLAC files after processing. |
+| `SAVE_DB_SPACE` | No | `true` | Prevents data blobs and thought tokens from being stored in the API calls DB, significantly reducing DB size. Set to `false` to keep this data. |
 
 #### LLM Configuration
 
@@ -126,7 +127,7 @@ services:
 | --- | --- | --- | --- |
 | `LLM_PROVIDER` | **Yes** | `(not set)` | `google`, `openai`, `anthropic`, or `ollama`. |
 | `LLM_API_KEY` | **Yes** | `(not set)` | API Key (Required for cloud providers). |
-| `LLM_MODEL` | **Yes** | `(not set)` | Model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`). |
+| `LLM_MODEL` | **Yes** | `(not set)` | Model name (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-2.5-pro`). |
 | `OLLAMA_URL` | *If Ollama* | `(not set)` | Full URL to Ollama instance (e.g., `http://192.168.1.50:11434`). |
 | `TOKEN_COST_INPUT` | No | `0` | Cost in USD per 1 Million input tokens (for stats). |
 | `TOKEN_COST_OUTPUT` | No | `0` | Cost in USD per 1 Million output tokens (for stats). |
