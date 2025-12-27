@@ -4,27 +4,28 @@ services:
     container_name: scribble
     restart: unless-stopped
     ports:
-      - "12345:12345" # Flask port
+      - "12345:12345" # Flask Web UI
     environment:
-     # --- Required ---
-      GEMINI_API_KEY: "YOUR_GEMINI_API_KEY_HERE"
+      # --- Required ---
+      # Choose one provider: google, openai, anthropic, ollama
+      LLM_PROVIDER: "google"
+      LLM_API_KEY: "YOUR_API_KEY_HERE"
+      LLM_MODEL: "gemini-2.5-flash"
       DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
 
-      # --- Optional: User/Group Mapping ---
-      PUID: "1000"
-      PGID: "1000"
-      TZ: "America/New_York"
-      WEB_PASSWORD: "YOUR_WEB_INTERFACE_PASSWORD_HERE"
-      WEB_COOKIE_KEY: "SOME_SECRET_HASH_HERE"
-      KEEP_AUDIO: "true" # Set to "false" to delete flac files after processing
+      # --- Optional: Web UI Security ---
+      WEB_PASSWORD: "change_me"
+      WEB_COOKIE_KEY: "random_secret_string" # For session security
+
+      # --- Optional: Cost Tracking (Per Million Tokens) ---
+      TOKEN_COST_INPUT: "0.075"   # Example cost per 1M input tokens
+      TOKEN_COST_OUTPUT: "0.30"   # Example cost per 1M output tokens
 
       # --- Optional: Whisper Performance Tuning ---
       OUTPUT_VERBOSITY: "3"
       WHISPER_MODEL: "large-v3"
       WHISPER_THREADS: "24"
       WHISPER_BATCH_SIZE: "24"
-      WHISPER_BEAM_SIZE: "3"
-      WHISPER_VAD_METHOD: "silero"
 
       RESPAWN_TIME: "3600" # Check for new files every hour
     volumes:
