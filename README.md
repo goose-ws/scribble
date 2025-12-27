@@ -143,7 +143,7 @@ services:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `WHISPER_MODEL` | `large-v3` | The whisper model to use. |
+| `WHISPER_MODEL` | `large-v3` | The whisper model to use. More on available models [here](https://github.com/goose-ws/scribble/wiki/Config-options-for-whisperx). |
 | `WHISPER_THREADS` | (all) | Number of CPU threads for whisperx. |
 | `WHISPER_BATCH_SIZE` | `8` | Parallel processing batch size. |
 | `WHISPER_BEAM_SIZE` | `5` | Beam search size (1-5). |

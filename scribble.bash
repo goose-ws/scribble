@@ -981,132 +981,136 @@ function sendPromptAnthropic {
     fi
 }
 
+function createDb {
+sqlite3 "${sqliteDb}" <<EOF
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
+
+-- ==========================================
+-- 1. GEMINI
+-- ==========================================
+CREATE TABLE IF NOT EXISTS gemini_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name TEXT,
+    prompt_token_count INTEGER,
+    thought_token_count INTEGER,
+    output_token_count INTEGER,
+    total_token_count INTEGER,
+    cost REAL,
+    request_timestamp TEXT,
+    request_epoch INTEGER,
+    duration_seconds REAL,
+    finish_reason TEXT,
+    http_status_code INTEGER,
+    request_json TEXT,
+    response_json TEXT
+);
+
+-- ==========================================
+-- 2. OPENAI
+-- ==========================================
+CREATE TABLE IF NOT EXISTS openai_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name TEXT,
+    prompt_token_count INTEGER,
+    thought_token_count INTEGER,
+    output_token_count INTEGER,
+    total_token_count INTEGER,
+    cost REAL,
+    request_timestamp TEXT,
+    request_epoch INTEGER,
+    duration_seconds REAL,
+    finish_reason TEXT,
+    http_status_code INTEGER,
+    request_json TEXT,
+    response_json TEXT
+);
+
+-- ==========================================
+-- 3. OLLAMA
+-- ==========================================
+CREATE TABLE IF NOT EXISTS ollama_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name TEXT,
+    prompt_token_count INTEGER,
+    thought_token_count INTEGER,
+    output_token_count INTEGER,
+    total_token_count INTEGER,
+    cost REAL,
+    request_timestamp TEXT,
+    request_epoch INTEGER,
+    duration_seconds REAL,
+    finish_reason TEXT,
+    http_status_code INTEGER,
+    request_json TEXT,
+    response_json TEXT
+);
+
+-- ==========================================
+-- 4. ANTHROPIC
+-- ==========================================
+CREATE TABLE IF NOT EXISTS anthropic_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_name TEXT,
+    prompt_token_count INTEGER,
+    thought_token_count INTEGER,
+    output_token_count INTEGER,
+    total_token_count INTEGER,
+    cost REAL,
+    request_timestamp TEXT,
+    request_epoch INTEGER,
+    duration_seconds REAL,
+    finish_reason TEXT,
+    http_status_code INTEGER,
+    request_json TEXT,
+    response_json TEXT
+);
+
+-- ==========================================
+-- 5. Discord
+-- ==========================================
+CREATE TABLE IF NOT EXISTS discord_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT,
+    channel_id TEXT,
+    author_username TEXT,
+    content TEXT,
+    discord_timestamp TEXT,
+    request_timestamp TEXT,
+    request_epoch INTEGER,
+    duration_seconds REAL,
+    http_status_code INTEGER,
+    request_json TEXT,
+    response_json TEXT
+);
+
+-- ==========================================
+-- 6. DB log
+-- ==========================================
+CREATE TABLE IF NOT EXISTS sqLog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    TIME TEXT,
+    COMMAND TEXT,
+    OUTPUT TEXT
+);
+EOF
+}
+
 ### Configuration
 # Base directory where DnD sessions are stored.
 baseDir="/app/Sessions"
 sqliteDb="/app/api.db"
 
-if ! [[ -f "${sqliteDb}" ]]; then
-    sqlite3 "${sqliteDb}" <<EOF
-    PRAGMA foreign_keys = ON;
-    PRAGMA journal_mode = WAL;
-
-    -- ==========================================
-    -- 1. GEMINI
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS gemini_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT,
-        prompt_token_count INTEGER,
-        thought_token_count INTEGER,
-        output_token_count INTEGER,
-        total_token_count INTEGER,
-        cost REAL,
-        request_timestamp TEXT,
-        request_epoch INTEGER,
-        duration_seconds REAL,
-        finish_reason TEXT,
-        http_status_code INTEGER,
-        request_json TEXT,
-        response_json TEXT
-    );
-
-    -- ==========================================
-    -- 2. OPENAI
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS openai_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT,
-        prompt_token_count INTEGER,
-        thought_token_count INTEGER,
-        output_token_count INTEGER,
-        total_token_count INTEGER,
-        cost REAL,
-        request_timestamp TEXT,
-        request_epoch INTEGER,
-        duration_seconds REAL,
-        finish_reason TEXT,
-        http_status_code INTEGER,
-        request_json TEXT,
-        response_json TEXT
-    );
-
-    -- ==========================================
-    -- 3. OLLAMA
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS ollama_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT,
-        prompt_token_count INTEGER,
-        thought_token_count INTEGER,
-        output_token_count INTEGER,
-        total_token_count INTEGER,
-        cost REAL,
-        request_timestamp TEXT,
-        request_epoch INTEGER,
-        duration_seconds REAL,
-        finish_reason TEXT,
-        http_status_code INTEGER,
-        request_json TEXT,
-        response_json TEXT
-    );
-
-    -- ==========================================
-    -- 4. ANTHROPIC
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS anthropic_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT,
-        prompt_token_count INTEGER,
-        thought_token_count INTEGER,
-        output_token_count INTEGER,
-        total_token_count INTEGER,
-        cost REAL,
-        request_timestamp TEXT,
-        request_epoch INTEGER,
-        duration_seconds REAL,
-        finish_reason TEXT,
-        http_status_code INTEGER,
-        request_json TEXT,
-        response_json TEXT
-    );
-
-    -- ==========================================
-    -- 5. Discord
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS discord_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id TEXT,
-        channel_id TEXT,
-        author_username TEXT,
-        content TEXT,
-        discord_timestamp TEXT,
-        request_timestamp TEXT,
-        request_epoch INTEGER,
-        duration_seconds REAL,
-        http_status_code INTEGER,
-        request_json TEXT,
-        response_json TEXT
-    );
-
-    -- ==========================================
-    -- 6. DB log
-    -- ==========================================
-    CREATE TABLE IF NOT EXISTS sqLog (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        TIME TEXT,
-        COMMAND TEXT,
-        OUTPUT TEXT
-    );
-EOF
-    if [[ -f "${sqliteDb}" ]]; then
-        printOutput "3" "Initialized database"
+if ! [[ -e "${sqliteDb}" ]]; then
+    createDb
+    if [[ -e "${sqliteDb}" ]]; then
+        printOutput "3" "Successfully initialized database"
     else
         printOutput "1" "Failed to initialize database"
         exit 1
     fi
 else
-    printOutput "5" "Verified DB presence"
+    printOutput "5" "Verified database presence"
 fi
 
 if ! [[ -d "${baseDir}" ]]; then
@@ -1122,7 +1126,6 @@ else
         printOutput "1" "Unable to read/write to [${baseDir}]"
         exit 1
     fi
-    
     printOutput "5" "Validated base dir [${baseDir}]"
 fi
 
@@ -1221,55 +1224,270 @@ fi
 
 PROMPT_FILE="/app/prompt.txt"
 
-# --- LLM Configuration & Sanity Checks ---
 # 1. Validate Provider
 if [[ -z "${LLM_PROVIDER}" ]]; then
     printOutput "2" "No LLM provider defined"
     exit 1
 fi
+
+# Validate API key and model
+declare -A validModels
 case "${LLM_PROVIDER}" in
     google)
         printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
+        
+        # 1. Validate API Key Variable
+        if [[ -z "${LLM_API_KEY}" ]]; then
+            printOutput "1" "No API key set for provider [${LLM_PROVIDER}]. Please set [LLM_API_KEY]."
+            exit 1
+        else
+            LLM_API_KEY_CENSORED="$(censorData "${LLM_API_KEY}")"
+            printOutput "5" "Validated LLM API Key [${LLM_API_KEY_CENSORED}]"
+        fi
+
+        # 2. Validate Model Variable
+        if [[ -z "${LLM_MODEL}" ]]; then
+            printOutput "1" "No LLM model set. Please set [LLM_MODEL]."
+            exit 1
+        fi
+
+        # 3.Validate the key
+        while :; do
+            # Construct URL with parameter expansion for pageToken
+            url="https://generativelanguage.googleapis.com/v1beta/models?key=${LLM_API_KEY}${pageToken:+&pageToken=${pageToken}}"
+            
+            # Fetch response
+            response=$(curl -s "${url}")
+
+            # Check for API errors immediately (Validates the API Key)
+            if jq -e '.error' <<<"${response}" > /dev/null; then
+                local errorMsg
+                errorMsg=$(jq -r '.error.message' <<<"${response}")
+                printOutput "1" "Google API Error [${errorMsg}]"
+                exit 1
+            else
+                printOutput "5" "Validated LLM API Key authorization"
+            fi
+
+            # Parse JSON and populate the array
+            while IFS='|' read -r codeName fullName; do
+                if [[ -n "${codeName}" ]]; then
+                    printOutput "5" "Found model [${codeName}] (${fullName})"
+                    validModels["${codeName}"]="${fullName}"
+                fi
+            done < <(jq -r '
+                .models[]? 
+                | select(.supportedGenerationMethods | index("generateContent")) 
+                | "\(.name | sub("^models/";""))|\(.displayName)"
+            ' <<<"${response}")
+
+            # Handle Next Page Token
+            pageToken=$(jq -r '.nextPageToken // empty' <<<"${response}")
+
+            if [[ -z "${pageToken}" ]]; then
+                break
+            fi
+        done
+
+        # Check if the requested model exists in the validModels array
+        if [[ -z "${validModels[${LLM_MODEL}]}" ]]; then
+            printOutput "1" "Invalid model [${LLM_MODEL}] for provider [google]."
+            printOutput "1" "Found [${#validModels[@]}] valid models supporting content generation"
+            for key in "${!validModels[@]}"; do
+                echo " - ${key} (${validModels[${key}]})"
+            done
+            printOutput "1" "For more info, see: https://ai.google.dev/gemini-api/docs/models"
+            exit 1
+        else
+            printOutput "5" "Successfully validated model [${LLM_MODEL}] against Google API."
+        fi
         ;;
-    openai)
-        printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
-        ;;
-    anthropic)
-        printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
-        ;;
+
     ollama)
         printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
-        # Ollama requires a URL
+        
+        # 0. Validate URL
         if [[ -z "${OLLAMA_URL}" ]]; then
              printOutput "1" "Provider is set to [ollama] but [OLLAMA_URL] is not set."
              exit 1
         else
             printOutput "5" "Validated Ollama URL [${OLLAMA_URL}]"
         fi
+        
+        # 1. Validate API Key Variable
+        if [[ -z "${LLM_API_KEY}" ]]; then
+            printOutput "1" "No API key set for provider [${LLM_PROVIDER}]. Please set [LLM_API_KEY]."
+            exit 1
+        else
+            LLM_API_KEY_CENSORED="$(censorData "${LLM_API_KEY}")"
+            printOutput "5" "Validated LLM API Key [${LLM_API_KEY_CENSORED}]"
+        fi
+
+        # 2. Validate Model Variable
+        if [[ -z "${LLM_MODEL}" ]]; then
+            printOutput "1" "No LLM model set. Please set [LLM_MODEL]."
+            exit 1
+        fi
+
+        local response
+        response=$(curl -s "${OLLAMA_URL}/api/tags")
+
+        # Check for connection errors (curl returns exit code 0 usually, so we check empty response or jq error)
+        if [[ -z "${response}" ]]; then
+            printOutput "1" "Could not connect to Ollama at [${OLLAMA_URL}]."
+            exit 1
+        fi
+
+        # Create array of valid Ollama models
+        while read -r modelName; do
+            if [[ -n "${modelName}" ]]; then
+                # Strip ':latest' if you prefer loose matching, or keep strict
+                validModels["${modelName}"]=1
+            fi
+        done < <(jq -r '.models[].name' <<<"${response}")
+
+        if [[ -z "${validModels[${LLM_MODEL}]}" ]]; then
+            printOutput "1" "Invalid model [${LLM_MODEL}] for provider [ollama]."
+            printOutput "3" "Available Ollama models:"
+            for key in "${!validModels[@]}"; do
+                echo " - ${key}"
+            done
+            exit 1
+        else
+            printOutput "5" "Successfully validated model [${LLM_MODEL}] against Ollama."
+        fi
         ;;
+
+    openai)
+        printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
+
+        # 1. Validate API Key
+        if [[ -z "${LLM_API_KEY}" ]]; then
+            printOutput "1" "No API key set for provider [${LLM_PROVIDER}]. Please set [LLM_API_KEY]."
+            exit 1
+        else
+            LLM_API_KEY_CENSORED="$(censorData "${LLM_API_KEY}")"
+            printOutput "5" "Validated LLM API Key [${LLM_API_KEY}]"
+        fi
+
+        # 2. Validate Model Variable
+        if [[ -z "${LLM_MODEL}" ]]; then
+            printOutput "1" "No LLM model set. Please set [LLM_MODEL]."
+            exit 1
+        fi
+
+        # 3. Fetch available models (deep validation)
+        printOutput "4" "Fetching available OpenAI models for validation"
+
+        response=$(curl -s \
+            -H "Authorization: Bearer ${LLM_API_KEY}" \
+            -H "Content-Type: application/json" \
+            https://api.openai.com/v1/models)
+
+        # Validate response
+        if [[ -z "${response}" ]]; then
+            printOutput "1" "No response from OpenAI API."
+            exit 1
+        fi
+
+        # Check for API error
+        if jq -e '.error' <<<"${response}" > /dev/null; then
+            errorMsg=$(jq -r '.error.message' <<<"${response}")
+            printOutput "1" "OpenAI API Error [${errorMsg}]"
+            exit 1
+        else
+            printOutput "5" "Validated LLM API Key authorization"
+        fi
+
+        # Build list of valid models
+        while read -r modelId; do
+            if [[ -n "${modelId}" ]]; then
+                validModels["${modelId}"]="1"
+            fi
+        done < <(jq -r '.data[].id' <<<"${response}")
+
+        # Validate requested model
+        if [[ -z "${validModels[${LLM_MODEL}]}" ]]; then
+            printOutput "1" "Invalid model [${LLM_MODEL}] for provider [openai]."
+            printOutput "3" "Available OpenAI models:"
+            for key in "${!validModels[@]}"; do
+                echo " - ${key}"
+            done
+            printOutput "1" "For more info, see: https://platform.openai.com/docs/models"
+            exit 1
+        else
+            printOutput "5" "Successfully validated model [${LLM_MODEL}] against OpenAI API."
+        fi
+        ;;
+
+    anthropic)
+        printOutput "5" "Validated LLM provider [${LLM_PROVIDER}]"
+        
+        # 1. Validate API Key Variable
+        if [[ -z "${LLM_API_KEY}" ]]; then
+            printOutput "1" "No API key set for provider [${LLM_PROVIDER}]. Please set [LLM_API_KEY]."
+            exit 1
+        else
+            LLM_API_KEY_CENSORED="$(censorData "${LLM_API_KEY}")"
+            printOutput "5" "Validated LLM API Key [${LLM_API_KEY}]"
+        fi
+        
+        # 2. Validate Model Variable
+        if [[ -z "${LLM_MODEL}" ]]; then
+            printOutput "1" "No LLM model set. Please set [LLM_MODEL]."
+            exit 1
+        fi
+
+        # 3. Fetch available models (deep validation)
+        printOutput "4" "Fetching available Anthropic models for validation"
+
+        response=$(curl -s \
+            -H "x-api-key: ${LLM_API_KEY}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            https://api.anthropic.com/v1/models)
+
+        # Validate response
+        if [[ -z "${response}" ]]; then
+            printOutput "1" "No response from Anthropic API."
+            exit 1
+        fi
+
+        # Check for API error
+        if jq -e '.error' <<<"${response}" > /dev/null; then
+            errorMsg=$(jq -r '.error.message' <<<"${response}")
+            printOutput "1" "Anthropic API Error [${errorMsg}]"
+            exit 1
+        else
+            printOutput "5" "Validated LLM API Key authorization"
+        fi
+
+        # Build list of valid models
+        while read -r modelId; do
+            if [[ -n "${modelId}" ]]; then
+                validModels["${modelId}"]="1"
+            fi
+        done < <(jq -r '.data[].id' <<<"${response}")
+
+        # Validate requested model
+        if [[ -z "${validModels[${LLM_MODEL}]}" ]]; then
+            printOutput "1" "Invalid model [${LLM_MODEL}] for provider [anthropic]."
+            printOutput "3" "Available Anthropic models:"
+            for key in "${!validModels[@]}"; do
+                echo " - ${key}"
+            done
+            printOutput "1" "For more info, see: https://docs.anthropic.com/en/docs/models-overview"
+            exit 1
+        else
+            printOutput "5" "Successfully validated model [${LLM_MODEL}] against Anthropic API."
+        fi
+        ;;
+
     *)
         printOutput "1" "LLM provider [${LLM_PROVIDER}] failed validation"
         exit 1
         ;;
 esac
-
-# 2. Validate Credentials
-# Cloud providers require an API Key
-if [[ -z "${LLM_API_KEY}" ]]; then
-    printOutput "1" "No API key set for provider [${LLM_PROVIDER}]. Please set [LLM_API_KEY]."
-    exit 1
-else
-    LLM_API_KEY_CENSORED="$(censorData "${LLM_API_KEY}")"
-    printOutput "5" "Validated LLM API Key [${LLM_API_KEY}]"
-fi
-
-# Validate that a model is set
-if [[ -z "${LLM_MODEL}" ]]; then
-    printOutput "1" "No LLM model set. Please set [LLM_MODEL]."
-    exit 1
-else
-    printOutput "5" "Validated LLM model [${LLM_MODEL}]"
-fi
 
 # 3. Audio Retention Policy
 if [[ -z "${KEEP_AUDIO}" ]]; then
