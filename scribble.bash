@@ -1567,6 +1567,30 @@ else
     SAVE_DB_SPACE="true"
 fi
 
+# Custom Script Check
+if [[ -n "${CUSTOM_SCRIPT}" ]]; then
+    scriptPath="/app/${CUSTOM_SCRIPT}"
+    if [[ -f "${scriptPath}" ]]; then
+        # Check if executable by the current user
+        if [[ ! -x "${scriptPath}" ]]; then
+            printOutput "2" "Custom script [${CUSTOM_SCRIPT}] found but not executable. Attempting to fix..."
+            chmod u+x "${scriptPath}"
+        fi
+        # Re-verify after attempted fix
+        if [[ -x "${scriptPath}" ]]; then
+            printOutput "5" "Verified custom script [${CUSTOM_SCRIPT}] is executable"
+        else
+            printOutput "1" "Custom script [${CUSTOM_SCRIPT}] is not executable and permissions could not be fixed. It will be ignored."
+            # Unset variable to prevent execution attempts later
+            unset CUSTOM_SCRIPT
+        fi
+    else
+        printOutput "1" "Custom script [${CUSTOM_SCRIPT}] defined but not found at [${scriptPath}]"
+        # Unset variable so we don't try to run a phantom file
+        unset CUSTOM_SCRIPT
+    fi
+fi
+
 # Trap SIGINT (Ctrl+C) and SIGTERM (docker stop)
 trap graceful_shutdown SIGINT SIGTERM
 
@@ -2040,6 +2064,28 @@ while [[ -z "${shutdown_requested}" ]]; do
                 fi
                 sleep 1
             done
+        fi
+        
+        # If we have a custom script defined, run it
+        if [[ -n "${CUSTOM_SCRIPT}" ]]; then
+            printOutput "3" "Executing custom script: [${CUSTOM_SCRIPT}]"
+            
+            # Execute the script, passing the recap file path as $1
+            printOutput "4" "=== Custom script output start ==="
+            
+            while read -r line; do
+                printOutput "4" "${line}"
+            done < <(/app/"${CUSTOM_SCRIPT}" "${recapFile}")
+            # Capture the exit code to log success or failure
+            scriptExitCode="${?}"
+            
+            printOutput "4" "=== Custom script output end ==="
+            
+            if [[ "${scriptExitCode}" -eq "0" ]]; then
+                printOutput "5" "Custom script [${CUSTOM_SCRIPT}] finished successfully"
+            else
+                printOutput "1" "Custom script [${CUSTOM_SCRIPT}] failed with exit code [${scriptExitCode}]"
+            fi
         fi
 
         # Clean up the original zip file after processing.
