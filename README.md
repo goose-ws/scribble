@@ -120,6 +120,7 @@ services:
 | `OUTPUT_VERBOSITY` | No | `3` | `1`: Errors, `2`: Warnings, `3`: Info, `4`: Verbose. |
 | `KEEP_AUDIO` | No | `true` | Set to `false` to delete FLAC files after processing. |
 | `SAVE_DB_SPACE` | No | `true` | Prevents data blobs and thought tokens from being stored in the API calls DB, significantly reducing DB size. Set to `false` to keep this data. |
+| `CUSTOM_SCRIPT` | No | `(not set)` | Names a custom script that can be run after the recap is posted to Discord. Useful for if you want to do anything else with the recap file, such as post it on a DocMost wiki, or something else. Script must be placed in the directory you are mounting as `/app`. The variable value should be the base file name (including extension) of the script you want to run (e.g. `CUSTOM_SCRIPT: "docmost.sh"`). The path to the recap file will be passed as positional parameter #1. |
 
 #### LLM Configuration
 
