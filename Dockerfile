@@ -39,7 +39,6 @@ WORKDIR /app
 COPY prompt.txt /opt/prompt.txt
 COPY --chmod=755 scribble.bash /opt/scribble.bash
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY --chmod=755 app.py /opt/app.py
 COPY --chmod=755 start-gunicorn.sh /opt/start-gunicorn.sh
 COPY templates /opt/templates
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
