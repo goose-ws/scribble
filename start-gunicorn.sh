@@ -16,3 +16,4 @@ done < <(exec gunicorn \
             --workers 2 \
             --bind 0.0.0.0:12345 \
             'app:app' 2>&1)
+
