@@ -1,5 +1,5 @@
 # Builder
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 # Create a virtual environment inside the builder
 RUN python -m venv /opt/venv
@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Final image
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # Update system packages
 RUN apt-get update && \
