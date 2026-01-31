@@ -263,9 +263,14 @@ def send_openai(prompt, transcript_path, config):
     return full_text, stats
 
 def send_ollama(prompt, transcript_path, config):
-    base_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-    base_url = base_url.split('://')[-1].split('/')[0]
-    url = f"http://{base_url}/v1/chat/completions"
+    base_url = config.get('ollama_url') or os.environ.get("OLLAMA_URL", "http://ollama:11434")
+    
+    # Clean up URL (handle trailing slashes or missing http)
+    if not base_url.startswith('http'):
+        base_url = f"http://{base_url}"
+    base_url = base_url.rstrip('/')
+    
+    url = f"{base_url}/v1/chat/completions"
     
     with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
         file_content = f.read()

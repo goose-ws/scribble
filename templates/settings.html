@@ -85,7 +85,7 @@
                     <label class="form-label">Compute Type</label>
                     <select name="whisper_compute_type" class="form-select mb-2">
                         <option value="float16" {% if config.whisper_compute_type == 'float16' %}selected{% endif %}>float16</option>
-                        <option value="int8_float16" {% if config.whisper_compute_type == 'int8_float16' %}selected{% endif %}>int8_float16</option>
+                        <option value="float32" {% if config.whisper_compute_type == 'float32' %}selected{% endif %}>float32</option>
                         <option value="int8" {% if config.whisper_compute_type == 'int8' %}selected{% endif %}>int8</option>
                     </select>
 
@@ -123,37 +123,32 @@
                 </div>
             </div>
 
-            <div class="card mb-3">
-                <div class="card-header bg-success text-white">LLM Settings</div>
-                <div class="card-body">
-                    <label class="form-label">Provider</label>
-                    <select name="llm_provider" class="form-select mb-2">
-                        <option value="OpenAI" {% if config.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI</option>
-                        <option value="Anthropic" {% if config.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic</option>
-                        <option value="Google" {% if config.llm_provider == 'Google' %}selected{% endif %}>Google</option>
-                        <option value="Ollama" {% if config.llm_provider == 'Ollama' %}selected{% endif %}>Ollama</option>
-                    </select>
+            <div class="mb-3">
+                <label class="form-label">LLM Provider</label>
+                <select name="llm_provider" class="form-select" onchange="toggleProviderSettings()">
+                    <option value="Google" {% if config.llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
+                    <option value="OpenAI" {% if config.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                    <option value="Anthropic" {% if config.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                    <option value="Ollama" {% if config.llm_provider == 'Ollama' %}selected{% endif %}>Ollama (Local)</option>
+                </select>
+            </div>
 
-                    <label class="form-label">Model Name</label>
-                    <input type="text" name="llm_model" class="form-control mb-2" value="{{ config.llm_model }}">
+            <div class="mb-3">
+                <label class="form-label">API Key</label>
+                <input type="password" name="llm_api_key" class="form-control" value="{{ config.llm_api_key or '' }}">
+                <div class="form-text">Required for Google, OpenAI, and Anthropic.</div>
+            </div>
 
-                    <label class="form-label">API Key</label>
-                    <div class="input-group mb-2">
-                        <input type="password" name="llm_api_key" id="llm_api_key" class="form-control" value="{{ config.llm_api_key }}">
-                        <button class="btn btn-outline-secondary" type="button" onclick="togglePass('llm_api_key')">👁</button>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="col-6">
-                            <label class="form-label">Input Cost ($/1M)</label>
-                            <input type="number" step="0.01" name="llm_input_cost" class="form-control mb-2" value="{{ config.llm_input_cost }}">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Output Cost ($/1M)</label>
-                            <input type="number" step="0.01" name="llm_output_cost" class="form-control mb-2" value="{{ config.llm_output_cost }}">
-                        </div>
-                    </div>
-                </div>
+            <div class="mb-3" id="ollama-url-group">
+                <label class="form-label">Ollama URL</label>
+                <input type="text" name="ollama_url" class="form-control" placeholder="http://ollama:11434" value="{{ config.ollama_url or '' }}">
+                <div class="form-text">Only required if Provider is set to Ollama.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Model Name</label>
+                <input type="text" name="llm_model" class="form-control" value="{{ config.llm_model or 'gemini-2.5-flash' }}">
+                <div class="form-text">e.g. gemini-2.5-flash, gpt-4o, llama3</div>
             </div>
         </div>
     </div>
@@ -205,7 +200,19 @@
         }
     }
     
-    // Run on load to set initial state
+    function toggleProviderSettings() {
+        const provider = document.querySelector('select[name="llm_provider"]').value;
+        const urlGroup = document.getElementById('ollama-url-group');
+        
+        if (provider === 'Ollama') {
+            urlGroup.style.display = 'block';
+        } else {
+            urlGroup.style.display = 'none';
+        }
+    }
+    
+    toggleProviderSettings();
+    
     document.addEventListener('DOMContentLoaded', toggleDbFields);
 </script>
 {% endblock %}

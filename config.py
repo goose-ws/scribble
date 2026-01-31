@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
 
     # LLM
     "llm_provider": "Google",
-    "llm_model": "gemini-1.5-flash",
+    "llm_model": "gemini-2.5-flash",
     "llm_api_key": "",
     "llm_input_cost": 0.0,
     "llm_output_cost": 0.0

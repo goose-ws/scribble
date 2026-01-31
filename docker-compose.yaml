@@ -1,32 +1,26 @@
 services:
   scribble:
-    image: goosews/scribble:latest
     container_name: scribble
-    restart: unless-stopped
+    hostname: scribble
+    image: ghcr.io/goose-ws/scribble:cuda-latest
     ports:
-      - "12345:12345" # Flask Web UI
+      - 13131:13131
     environment:
-      # --- Required ---
-      # Choose one provider: google, openai, anthropic, ollama
-      LLM_PROVIDER: "google"
-      LLM_API_KEY: "YOUR_API_KEY_HERE"
-      LLM_MODEL: "gemini-2.5-flash"
-      DISCORD_WEBHOOK: "YOUR_DISCORD_WEBHOOK_URL_HERE"
-
-      # --- Optional: Web UI Security ---
-      WEB_PASSWORD: "change_me"
-      WEB_COOKIE_KEY: "random_secret_string" # For session security
-
-      # --- Optional: Cost Tracking (Per Million Tokens) ---
-      TOKEN_COST_INPUT: "0.075"   # Example cost per 1M input tokens
-      TOKEN_COST_OUTPUT: "0.30"   # Example cost per 1M output tokens
-
-      # --- Optional: Whisper Performance Tuning ---
-      OUTPUT_VERBOSITY: "3"
-      WHISPER_MODEL: "large-v3"
-      WHISPER_THREADS: "24"
-      WHISPER_BATCH_SIZE: "24"
-
-      RESPAWN_TIME: "3600" # Check for new files every hour
+      TZ: "America/New_York"
+      PUID: "1000"
+      PGID: "1000"
     volumes:
-      - ./app:/app
+      - "./data:/data"
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-file: "1"
+        max-size: "10M"
