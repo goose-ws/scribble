@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Upload Session</h2>
+
+<div class="card col-md-8 mx-auto">
+    <div class="card-body">
+        <form id="uploadForm">
+            <div class="mb-3">
+                <label class="form-label">Select Campaign</label>
+                <select name="campaign_id" class="form-select" required>
+                    <option value="" disabled selected>-- Choose Campaign --</option>
+                    {% for campaign in campaigns %}
+                    <option value="{{ campaign.id }}">{{ campaign.name }}</option>
+                    {% endfor %}
+                </select>
+                {% if not campaigns %}
+                <div class="form-text text-danger">You must create a campaign in settings first!</div>
+                {% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Session Zip File</label>
+                <input type="file" name="file" class="form-control" accept=".zip" required>
+            </div>
+
+            <div class="progress mb-3 d-none" id="progressWrapper">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar">0%</div>
+            </div>
+
+            <div id="statusMessage" class="mb-3"></div>
+
+            <button type="submit" class="btn btn-primary w-100" id="uploadBtn">Upload & Process</button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function() {
+    var btn = document.getElementById('uploadBtn');
+    var text = document.getElementById('btnText');
+    var spinner = document.getElementById('btnSpinner');
+    
+    // Prevent double-submit
+    if (btn.classList.contains('disabled')) return;
+        
+        btn.classList.add('disabled');
+        text.textContent = "Uploading...";
+        spinner.classList.remove('d-none');
+    });
+    
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    var formData = new FormData(this);
+    var xhr = new XMLHttpRequest();
+    var progressBar = document.getElementById('progressBar');
+    var progressWrapper = document.getElementById('progressWrapper');
+    var statusMessage = document.getElementById('statusMessage');
+    var btn = document.getElementById('uploadBtn');
+
+    // Reset UI
+    progressWrapper.classList.remove('d-none');
+    statusMessage.innerHTML = '';
+    statusMessage.className = 'mb-3';
+    btn.disabled = true;
+
+    xhr.upload.addEventListener('progress', function(e) {
+        if (e.lengthComputable) {
+            var percent = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = percent + '%';
+            progressBar.innerHTML = percent + '%';
+        }
+    });
+
+    xhr.addEventListener('load', function() {
+        if (xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText);
+            progressBar.classList.add('bg-success');
+            statusMessage.innerHTML = 'Upload Complete! Redirecting...';
+            statusMessage.className = 'mb-3 text-success';
+            setTimeout(function() {
+                window.location.href = response.redirect;
+            }, 1000);
+        } else {
+            var response = JSON.parse(xhr.responseText);
+            progressBar.classList.add('bg-danger');
+            statusMessage.innerHTML = 'Error: ' + (response.error || 'Upload failed');
+            statusMessage.className = 'mb-3 text-danger';
+            btn.disabled = false;
+        }
+    });
+
+    xhr.addEventListener('error', function() {
+        progressBar.classList.add('bg-danger');
+        statusMessage.innerHTML = 'Network Error';
+        statusMessage.className = 'mb-3 text-danger';
+        btn.disabled = false;
+    });
+
+    xhr.open('POST', '/upload', true);
+    xhr.send(formData);
+});
+</script>
+{% endblock %}

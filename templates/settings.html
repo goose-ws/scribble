@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Settings</h2>
+<form method="POST">
+    <div class="row mb-3">
+        
+        <div class="col-12 mb-3">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <i class="bi bi-database"></i> Database Configuration
+                </div>
+                <div class="card-body">
+                    <label class="form-label">Database Type</label>
+                    <select name="db_type" id="db_type" class="form-select mb-3" onchange="toggleDbFields()">
+                        <option value="sqlite" {% if config.db_type == 'sqlite' %}selected{% endif %}>SQLite (Default)</option>
+                        <option value="mariadb" {% if config.db_type == 'mariadb' %}selected{% endif %}>MariaDB / MySQL</option>
+                        <option value="postgres" {% if config.db_type == 'postgres' %}selected{% endif %}>PostgreSQL</option>
+                    </select>
+                    
+                    <div id="external_db_fields" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label">Address (host:port)</label>
+                                <input type="text" name="db_address" class="form-control" value="{{ config.db_address }}" placeholder="192.168.1.50:3306">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label">Database Name</label>
+                                <input type="text" name="db_name" class="form-control" value="{{ config.db_name }}">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label">Username</label>
+                                <input type="text" name="db_username" class="form-control" value="{{ config.db_username }}">
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label">Password</label>
+                                <div class="input-group">
+                                    <input type="password" name="db_password" id="db_password" class="form-control" value="{{ config.db_password }}">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="togglePass('db_password')">👁</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="alert alert-warning mt-2 small">
+                            <strong>Note:</strong> Changing DB settings requires a container restart to take full effect. Ensure the external DB exists and the user has permissions.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card mb-3 h-100">
+                <div class="card-header bg-primary text-white">Whisper Settings</div>
+                <div class="card-body">
+                    <label class="form-label">Device</label>
+                    <select name="device" class="form-select mb-2" {% if system_mode == 'cpu' %}readonly style="background-color: #e9ecef; pointer-events: none;"{% endif %}>
+                        {% if system_mode == 'cpu' %}
+                            <option value="cpu" selected>CPU (Forced)</option>
+                        {% else %}
+                            <option value="cuda" {% if config.device == 'cuda' %}selected{% endif %}>CUDA (GPU)</option>
+                            <option value="cpu" {% if config.device == 'cpu' %}selected{% endif %}>CPU</option>
+                        {% endif %}
+                    </select>
+                    {% if system_mode == 'cpu' %}
+                        <div class="form-text text-muted mb-2"><i class="bi bi-info-circle"></i> Running in CPU-Only container. GPU disabled.</div>
+                        <input type="hidden" name="device" value="cpu">
+                    {% endif %}
+
+                    <label class="form-label">Model Name</label>
+                    <input type="text" name="whisper_model" class="form-control mb-2" value="{{ config.whisper_model }}">
+                    
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">Threads (0=all)</label>
+                            <input type="number" name="whisper_threads" class="form-control mb-2" value="{{ config.whisper_threads }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Batch Size</label>
+                            <input type="number" name="whisper_batch_size" class="form-control mb-2" value="{{ config.whisper_batch_size }}">
+                        </div>
+                    </div>
+
+                    <label class="form-label">Beam Size</label>
+                    <input type="number" name="whisper_beam_size" class="form-control mb-2" value="{{ config.whisper_beam_size }}">
+                    
+                    <label class="form-label">Compute Type</label>
+                    <select name="whisper_compute_type" class="form-select mb-2">
+                        <option value="float16" {% if config.whisper_compute_type == 'float16' %}selected{% endif %}>float16</option>
+                        <option value="int8_float16" {% if config.whisper_compute_type == 'int8_float16' %}selected{% endif %}>int8_float16</option>
+                        <option value="int8" {% if config.whisper_compute_type == 'int8' %}selected{% endif %}>int8</option>
+                    </select>
+
+                    <label class="form-label">Language Code</label>
+                    <input type="text" name="whisper_language" class="form-control mb-2" value="{{ config.whisper_language }}">
+
+                    <label class="form-label">Hugging Face Token (Optional)</label>
+                    <div class="input-group mb-2">
+                        <input type="password" name="hf_token" id="hf_token" class="form-control" value="{{ config.hf_token }}">
+                        <button class="btn btn-outline-secondary" type="button" onclick="togglePass('hf_token')">👁</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-3">
+                <div class="card-header bg-info text-white">VAD Settings</div>
+                <div class="card-body">
+                    <label class="form-label">VAD Method</label>
+                    <select name="vad_method" class="form-select mb-2">
+                        <option value="silero" {% if config.vad_method == 'silero' %}selected{% endif %}>Silero</option>
+                    </select>
+
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">Onset Threshold</label>
+                            <input type="number" step="0.001" name="vad_onset" class="form-control mb-2" value="{{ config.vad_onset }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Offset Threshold</label>
+                            <input type="number" step="0.001" name="vad_offset" class="form-control mb-2" value="{{ config.vad_offset }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header bg-success text-white">LLM Settings</div>
+                <div class="card-body">
+                    <label class="form-label">Provider</label>
+                    <select name="llm_provider" class="form-select mb-2">
+                        <option value="OpenAI" {% if config.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI</option>
+                        <option value="Anthropic" {% if config.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic</option>
+                        <option value="Google" {% if config.llm_provider == 'Google' %}selected{% endif %}>Google</option>
+                        <option value="Ollama" {% if config.llm_provider == 'Ollama' %}selected{% endif %}>Ollama</option>
+                    </select>
+
+                    <label class="form-label">Model Name</label>
+                    <input type="text" name="llm_model" class="form-control mb-2" value="{{ config.llm_model }}">
+
+                    <label class="form-label">API Key</label>
+                    <div class="input-group mb-2">
+                        <input type="password" name="llm_api_key" id="llm_api_key" class="form-control" value="{{ config.llm_api_key }}">
+                        <button class="btn btn-outline-secondary" type="button" onclick="togglePass('llm_api_key')">👁</button>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-6">
+                            <label class="form-label">Input Cost ($/1M)</label>
+                            <input type="number" step="0.01" name="llm_input_cost" class="form-control mb-2" value="{{ config.llm_input_cost }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Output Cost ($/1M)</label>
+                            <input type="number" step="0.01" name="llm_output_cost" class="form-control mb-2" value="{{ config.llm_output_cost }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header bg-secondary text-white">System Settings</div>
+        <div class="card-body">
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" name="archive_zip" id="archive_zip" {% if config.archive_zip %}checked{% endif %}>
+                <label class="form-check-label" for="archive_zip">Archive Uploaded Zip Files</label>
+            </div>
+            
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" name="db_space_saver" id="db_space_saver" {% if config.db_space_saver %}checked{% endif %}>
+                <label class="form-check-label" for="db_space_saver">DB Space Saver (Truncate large JSON logs)</label>
+            </div>
+
+            <hr>
+            
+            <label class="form-label">WebUI Password</label>
+            <div class="input-group mb-2">
+                <input type="password" name="webui_password" id="webui_password" class="form-control" value="{{ config.webui_password }}">
+                <button class="btn btn-outline-secondary" type="button" onclick="togglePass('webui_password')">👁</button>
+                <span class="input-group-text text-muted">Update to change login</span>
+            </div>
+        </div>
+    </div>
+    
+    <button type="submit" class="btn btn-primary btn-lg w-100">Save Settings</button>
+</form>
+
+<script>
+    function toggleDbFields() {
+        const type = document.getElementById('db_type').value;
+        const fields = document.getElementById('external_db_fields');
+        if (type === 'sqlite') {
+            fields.style.display = 'none';
+        } else {
+            fields.style.display = 'block';
+        }
+    }
+    
+    function togglePass(id) {
+        const input = document.getElementById(id);
+        if (input.type === "password") {
+            input.type = "text";
+        } else {
+            input.type = "password";
+        }
+    }
+    
+    // Run on load to set initial state
+    document.addEventListener('DOMContentLoaded', toggleDbFields);
+</script>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Campaigns</h2>
+
+<div class="card mb-4">
+    <div class="card-header">Create New Campaign</div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-2">
+                    <label>Campaign Name</label>
+                    <input type="text" name="name" class="form-control" required>
+                </div>
+                <div class="col-md-6 mb-2">
+                    <label>Discord Webhook URL</label>
+                    <input type="text" name="discord_webhook" class="form-control">
+                </div>
+                <div class="col-12 mb-2">
+                    <label>System Prompt</label>
+                    <textarea name="system_prompt" class="form-control" rows="4"></textarea>
+                </div>
+                <div class="col-12 mb-2">
+                    <label class="form-label">Custom Scripts (/data/scripts)</label>
+                    <div class="card">
+                        <div class="card-body p-2" style="max-height: 150px; overflow-y: auto;">
+                            {% if available_scripts %}
+                                {% for script in available_scripts %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="scripts" value="{{ script }}" id="script_{{ loop.index }}">
+                                    <label class="form-check-label" for="script_{{ loop.index }}">
+                                        {{ script }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="text-muted small fst-italic">
+                                    No scripts found. Add files to <span class="font-monospace">/data/scripts/</span> to see them here.
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success mt-2">Create Campaign</button>
+        </form>
+    </div>
+</div>
+
+<h3>Existing Campaigns</h3>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Discord Hook</th>
+            <th>Scripts</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for campaign in campaigns %}
+        <tr>
+            <td>{{ campaign.name }}</td>
+            <td>{{ campaign.discord_webhook[:30] }}...</td>
+            <td>{{ campaign.script_paths }}</td>
+            <td>
+                <a href="/campaigns/edit/{{ campaign.id }}" class="btn btn-primary btn-sm">Edit</a>
+                <a href="/campaigns/delete/{{ campaign.id }}" class="btn btn-danger btn-sm" onclick="return confirm('Delete this campaign?')">Delete</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">No campaigns found.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

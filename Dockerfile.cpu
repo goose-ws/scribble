@@ -1,0 +1,59 @@
+# Use Python slim image (Debian based)
+FROM python:3.10-slim
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+# procps: for psutil
+RUN apt-get update
+RUN apt-get install -y \
+    ffmpeg \
+    git \
+    curl \
+    tzdata \
+    jq \
+    procps
+
+# Clean up
+RUN rm -rf /var/lib/apt/lists/*
+
+# Set Mode Environment Variable
+ENV SCRIBBLE_MODE="cpu"
+
+# Set up working directory
+WORKDIR /app
+
+# Install Python Dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN rm requirements.txt
+
+# Copy Application Code
+COPY --chmod=775 app.py .
+COPY --chmod=775 config.py .
+COPY --chmod=775 database.py .
+COPY --chmod=775 db_migrate.py .
+COPY --chmod=775 llm_engine.py .
+COPY --chmod=775 models.py .
+COPY --chmod=775 start.sh .
+COPY --chmod=775 transcription_engine.py .
+COPY --chmod=775 worker.py .
+COPY templates .
+
+# Environment Variables
+ENV PUID=1000
+ENV PGID=1000
+ENV TZ=UTC
+
+# Make start script executable
+RUN chmod +x start.sh
+
+# Create data directories
+RUN mkdir -p /data/input /data/scripts /data/archive
+
+# Expose the WebUI port
+EXPOSE 13131
+
+# Command
+CMD ["./start.sh"]

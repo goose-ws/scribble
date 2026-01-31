@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2>Session: {{ recording_session.original_filename }}</h2>
+        <span class="text-muted">Recorded: {{ recording_session.local_time_str }} | Campaign: {{ recording_session.campaign.name }}</span>
+        <span id="session-status-badge" class="badge ms-2 bg-secondary">{{ recording_session.status }}</span>
+    </div>
+    <div class="btn-group">
+        <a href="/" class="btn btn-outline-secondary">Back</a>
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            <i class="bi bi-trash"></i> Delete
+        </button>
+    </div>
+
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete Session?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>{{ recording_session.original_filename }}</strong>?</p>
+                    <p class="text-danger small">This action cannot be undone. All transcripts and logs will be lost.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form action="{{ url_for('delete_session', session_id=recording_session.id) }}" method="POST">
+                        <button type="submit" class="btn btn-danger">Delete Permanently</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="card mb-3 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <strong class="text-muted"><i class="bi bi-bar-chart-fill"></i> Session Analytics</strong>
+    </div>
+    <div class="card-body py-2">
+        <div class="row align-items-center">
+            
+            <div class="col-md-4 border-end">
+                <h6 class="text-primary mb-1">AI Generation</h6>
+                <ul class="list-unstyled small mb-0">
+                    <li><strong>Provider:</strong> {{ llm_stats.get('provider', 'N/A') }}</li>
+                    <li><strong>Model:</strong> {{ llm_stats.get('model', 'N/A') }}</li>
+                    <li><strong>API Time:</strong> {{ llm_stats.get('api_time', 'N/A') }}</li>
+                    <li><strong>Tokens:</strong> {{ llm_stats.get('tokens', '') }}</li>
+                </ul>
+            </div>
+
+            <div class="col-md-3 border-end">
+                <h6 class="text-success mb-1">Integrations</h6>
+                <div class="small">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Discord:</span>
+                        {% if integrations.discord_sent %}
+                            <span class="badge bg-success"><i class="bi bi-check-lg"></i> Sent</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Not Sent</span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if integrations.scripts %}
+                        {% for script in integrations.scripts %}
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-truncate" style="max-width: 100px;" title="{{ script.name }}">{{ script.name }}:</span>
+                            {% if script.success %}
+                                <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                            {% else %}
+                                <span class="badge bg-danger" title="{{ script.detail }}">Fail</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-muted fst-italic">No scripts run</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="col-md-5">
+                <div class="table-responsive">
+                    <table class="table table-sm table-borderless small mb-0">
+                        <thead>
+                            <tr class="text-muted border-bottom">
+                                <th>User</th>
+                                <th class="text-end">Whisper Processing Time</th>
+                                <th class="text-end">Transcribed Word Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user, stats in user_metrics.items() %}
+                            <tr>
+                                <td class="fw-bold">{{ user }}</td>
+                                <td class="text-end font-monospace">{{ stats.duration }}</td>
+                                <td class="text-end">{{ stats.words }}</td>
+                            </tr>
+                            {% else %}
+                                <tr><td colspan="3" class="text-center text-muted">No data</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="border-top">
+                            <tr>
+                                <td class="fw-bold text-dark">Total Time:</td>
+                                <td colspan="2" class="text-end fw-bold text-dark font-monospace">
+                                    {{ total_duration }}
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-7">
+        <ul class="nav nav-tabs" id="sessionTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="master-tab" data-bs-toggle="tab" data-bs-target="#master" type="button" role="tab">Master Transcript</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="recap-tab" data-bs-toggle="tab" data-bs-target="#recap" type="button" role="tab">Recap</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">User Transcripts</button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="sessionTabsContent">
+            <div class="tab-pane fade show active" id="master" role="tabpanel">
+                <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
+                    <div class="card-body p-0">
+                        <div id="transcript-content" class="p-3" style="max-height: 700px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
+                            {% if transcript %}
+                                {{ transcript }}
+                            {% else %}
+                                <div class="text-center text-muted p-5">
+                                    <p>Transcript has not been generated yet.</p>
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="recap" role="tabpanel">
+                <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
+                    <div class="card-body p-0">
+                        <div id="recap-content" class="p-3" style="max-height: 700px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
+                            {% if recording_session.summary_text %}
+                                {{ recording_session.summary_text }}
+                            {% else %}
+                                <div class="text-center text-muted p-5">Recap not available yet.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="users" role="tabpanel">
+                <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
+                    <div class="card-body p-3">
+                        <select id="user-select" class="form-select mb-3" onchange="showUserTranscript()">
+                            <option value="">Select a User...</option>
+                            {% for username, content in user_transcripts.items() %}
+                            <option value="{{ username }}">{{ username }}</option>
+                            {% endfor %}
+                        </select>
+                        <div id="user-transcript-display" style="max-height: 600px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem; background: #f8f9fa; padding: 1rem; border: 1px solid #dee2e6;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <h5 class="mb-3">Processing Steps</h5>
+        <div class="accordion" id="jobAccordion">
+            {% for job in jobs %}
+            <div class="accordion-item" id="job-card-{{ job.id }}">
+                <h2 class="accordion-header">
+                    <button class="accordion-button {% if job.status != 'processing' and job.status != 'error' %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ job.id }}">
+                        <div class="d-flex w-100 justify-content-between align-items-center me-3">
+                            <span>
+                                <strong class="job-step-name">{{ job.step|title }}</strong>
+                                <span id="job-status-{{ job.id }}" class="badge ms-2 
+                                    {% if job.status == 'completed' %}bg-success
+                                    {% elif job.status == 'processing' %}bg-warning text-dark
+                                    {% elif job.status == 'error' %}bg-danger
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ job.status }}
+                                </span>
+                            </span>
+                            <small id="job-time-{{ job.id }}" class="text-muted">{{ job.updated_at.strftime('%H:%M:%S') }}</small>
+                        </div>
+                    </button>
+                </h2>
+                <div id="collapse{{ job.id }}" class="accordion-collapse collapse {% if job.status == 'processing' or job.status == 'error' %}show{% endif %}" data-bs-parent="#jobAccordion">
+                    <div class="accordion-body bg-dark text-light p-2">
+                        <pre id="job-logs-{{ job.id }}" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem; margin: 0;">{{ job.logs }}</pre>
+                        
+                        <div id="job-retry-{{ job.id }}" class="mt-2 pt-2 border-top border-secondary text-end {% if job.status != 'error' %}d-none{% endif %}">
+                            <a href="/job/{{ job.id }}/retry" class="btn btn-sm btn-danger">Retry Step</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+    const sessionId = {{ recording_session.id }};
+    
+    // Initialize with data from Server (Fixes empty list on load)
+    let userDataStore = {{ user_transcripts | tojson }};
+
+    function updateBadgeClass(element, status) {
+        // ... (Keep existing function) ...
+        element.className = 'badge ms-2';
+        if (status === 'completed') element.classList.add('bg-success');
+        else if (status === 'processing') element.classList.add('bg-warning', 'text-dark');
+        else if (status === 'error') element.classList.add('bg-danger');
+        else element.classList.add('bg-secondary');
+        element.textContent = status;
+    }
+
+    function showUserTranscript() {
+        const select = document.getElementById('user-select');
+        const display = document.getElementById('user-transcript-display');
+        const user = select.value;
+        
+        if (user && userDataStore[user]) {
+            display.innerText = userDataStore[user];
+        } else {
+            display.innerText = "Select a user to view their individual transcript.";
+        }
+    }
+
+    function fetchStatus() {
+        fetch(`/session/${sessionId}/status`)
+            .then(response => response.json())
+            .then(data => {
+                // ... (Keep Session/Master/Recap updates) ...
+                const sessionBadge = document.getElementById('session-status-badge');
+                if (sessionBadge) sessionBadge.textContent = data.session_status;
+                
+                // Update Master
+                const transcriptDiv = document.getElementById('transcript-content');
+                if (data.transcript_ready && transcriptDiv.innerText !== data.transcript) {
+                    transcriptDiv.innerText = data.transcript;
+                }
+                
+                // Update Recap
+                const recapDiv = document.getElementById('recap-content');
+                if (data.summary && recapDiv.innerText !== data.summary) {
+                    recapDiv.innerText = data.summary;
+                }
+
+                // Update User Transcripts (Live)
+                if (data.user_transcripts) {
+                    // Update the local store with fresh data
+                    userDataStore = data.user_transcripts;
+                    
+                    const select = document.getElementById('user-select');
+                    // Only add new options if they are missing
+                    // We iterate the API data, check if option exists, if not add it.
+                    for (const [user, text] of Object.entries(data.user_transcripts)) {
+                         let exists = false;
+                         for (let i = 0; i < select.options.length; i++) {
+                             if (select.options[i].value === user) {
+                                 exists = true;
+                                 break;
+                             }
+                         }
+                         if (!exists) {
+                             const option = document.createElement('option');
+                             option.value = user;
+                             option.text = user;
+                             select.appendChild(option);
+                         }
+                    }
+                    
+                    // Refresh display if currently viewing a user
+                    if (select.value) showUserTranscript();
+                }
+
+                // ... (Keep Jobs update logic) ...
+                const accordion = document.getElementById('jobAccordion');
+                data.jobs.forEach(job => {
+                    const existingCard = document.getElementById(`job-card-${job.id}`);
+                    if (existingCard) {
+                        const statusBadge = document.getElementById(`job-status-${job.id}`);
+                        updateBadgeClass(statusBadge, job.status);
+                        document.getElementById(`job-time-${job.id}`).textContent = job.updated_at;
+                        const logsPre = document.getElementById(`job-logs-${job.id}`);
+                        if (logsPre.innerText.length !== job.logs.length) {
+                             logsPre.innerText = job.logs;
+                             if (job.status === 'processing') logsPre.scrollTop = logsPre.scrollHeight;
+                        }
+                        const retryDiv = document.getElementById(`job-retry-${job.id}`);
+                        if (job.status === 'error') retryDiv.classList.remove('d-none');
+                        else retryDiv.classList.add('d-none');
+                    } else {
+                        window.location.reload(); 
+                    }
+                });
+            })
+            .catch(error => console.error('Error fetching status:', error));
+    }
+
+    // Start Polling
+    setInterval(fetchStatus, 2000);
+</script>
+{% endblock %}

@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Dashboard</h2>
+    <div>
+        <a href="/upload" class="btn btn-primary">+ New Session</a>
+    </div>
+</div>
+
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+        <h5 class="mb-0 text-muted"><i class="bi bi-graph-up"></i> Performance Metrics</h5>
+        <div class="btn-group btn-group-sm" role="group" id="time-filters">
+            <button type="button" class="btn btn-outline-secondary" onclick="loadMetrics('24h')">24h</button>
+            <button type="button" class="btn btn-outline-secondary active" onclick="loadMetrics('7d')">7d</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="loadMetrics('30d')">30d</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="loadMetrics('365d')">Year</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="loadMetrics('all')">All</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row text-center mb-4">
+            <div class="col-md-2 border-end">
+                <h3 class="text-primary mb-0" id="stat-campaigns">-</h3>
+                <small class="text-muted">Active Campaigns</small>
+            </div>
+            <div class="col-md-2 border-end">
+                <h3 class="text-success mb-0" id="stat-recaps">-</h3>
+                <small class="text-muted">Recaps Generated</small>
+            </div>
+            <div class="col-md-2 border-end">
+                <h3 class="text-info mb-0" id="stat-calls">-</h3>
+                <small class="text-muted">LLM API Calls</small>
+            </div>
+             <div class="col-md-2 border-end">
+                <h3 class="text-warning mb-0" id="stat-tokens">-</h3>
+                <small class="text-muted">Total Tokens</small>
+            </div>
+            <div class="col-md-2 border-end">
+                <h3 class="text-danger mb-0" id="stat-cost">$-</h3>
+                <small class="text-muted">Est. Cost</small>
+            </div>
+            <div class="col-md-2">
+                <h3 class="text-secondary mb-0" id="stat-latency">-</h3>
+                <small class="text-muted">Avg Response (s)</small>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="text-center mb-3">Calls by Provider (Who?)</h6>
+                <div style="height: 200px; position: relative;">
+                    <canvas id="providerChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6 class="text-center mb-3">Model Performance (Avg Latency)</h6>
+                <div style="height: 200px; position: relative;">
+                    <canvas id="modelChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Recent Sessions</div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Date</th>
+                    <th>Campaign</th>
+                    <th>Filename</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for session in sessions %}
+                <tr>
+                    <td>{{ session.local_time_str }}</td>
+                    <td><span class="badge bg-light text-dark border">{{ session.campaign.name }}</span></td>
+                    <td class="small font-monospace">{{ session.original_filename }}</td>
+                    <td>
+                        <span class="badge 
+                            {% if session.status == 'Completed' %}bg-success
+                            {% elif session.status == 'Processing' %}bg-warning text-dark
+                            {% else %}bg-secondary{% endif %}">
+                            {{ session.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-4 text-muted">No sessions found. Upload one to get started!</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // Chart Globals
+    let providerChart = null;
+    let modelChart = null;
+
+    function initCharts() {
+        const pCtx = document.getElementById('providerChart').getContext('2d');
+        providerChart = new Chart(pCtx, {
+            type: 'doughnut',
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6c757d'] }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        const mCtx = document.getElementById('modelChart').getContext('2d');
+        modelChart = new Chart(mCtx, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Seconds', data: [], backgroundColor: '#20c997' }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+        });
+    }
+
+    function loadMetrics(period) {
+        // Update Buttons
+        document.querySelectorAll('#time-filters button').forEach(b => b.classList.remove('active', 'btn-secondary'));
+        document.querySelectorAll('#time-filters button').forEach(b => {
+             if(b.innerText.toLowerCase().includes(period) || (period === '365d' && b.innerText === 'Year')) {
+                 b.classList.add('active'); 
+             }
+        });
+
+        fetch(`/api/metrics?period=${period}`)
+            .then(res => res.json())
+            .then(data => {
+                // Update Big Numbers
+                document.getElementById('stat-campaigns').innerText = data.campaigns;
+                document.getElementById('stat-recaps').innerText = data.recaps;
+                document.getElementById('stat-calls').innerText = data.calls;
+                document.getElementById('stat-tokens').innerText = data.tokens.toLocaleString();
+                document.getElementById('stat-cost').innerText = '$' + data.cost;
+                document.getElementById('stat-latency').innerText = data.avg_latency;
+
+                // Update Provider Chart
+                providerChart.data.labels = data.providers.map(p => p.name);
+                providerChart.data.datasets[0].data = data.providers.map(p => p.count);
+                providerChart.update();
+
+                // Update Model Chart
+                modelChart.data.labels = data.models.map(m => m.name);
+                modelChart.data.datasets[0].data = data.models.map(m => m.latency);
+                modelChart.update();
+            });
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        initCharts();
+        loadMetrics('7d'); // Default load
+    });
+</script>
+{% endblock %}

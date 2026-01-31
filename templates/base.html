@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scribble</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .sidebar { min-height: 100vh; background-color: #343a40; color: white; }
+        .sidebar a { color: rgba(255,255,255,.75); text-decoration: none; display: block; padding: 10px; }
+        .sidebar a:hover, .sidebar a.active { color: white; background-color: rgba(255,255,255,.1); }
+        .sidebar .logout { margin-top: 20px; border-top: 1px solid #4b545c; }
+    </style>
+</head>
+<body>
+    <div class="d-flex">
+        {% if session.get('logged_in') %}
+        <div class="sidebar p-3" style="width: 250px;">
+            <h3>Scribble</h3>
+            <hr>
+            <a href="/">Dashboard</a>
+            <a href="/upload">Upload</a>
+            <a href="/campaigns">Campaigns</a>
+            <a href="/settings">Settings</a>
+            <div class="logout">
+                <a href="/logout" class="text-danger">Logout</a>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="flex-grow-1 p-4">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
