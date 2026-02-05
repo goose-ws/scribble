@@ -1,5 +1,5 @@
 # Use Python slim image (Debian based)
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
