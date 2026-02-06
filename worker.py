@@ -72,6 +72,7 @@ class JobManager(threading.Thread):
                 # Fetch session to access campaign scripts
                 session = Session.query.get(job.session_id)
                 recap_path = os.path.join(session.directory_path, "session_recap.txt")
+                transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
                 
                 # --- CAMPAIGN SCRIPTS LOGIC ---
                 if session.campaign.script_paths:
@@ -94,7 +95,7 @@ class JobManager(threading.Thread):
                             try:
                                 # Pass recap path as $1
                                 result = subprocess.run(
-                                    [script_full_path, recap_path],
+                                    [script_full_path, recap_path, transcript_path],
                                     capture_output=True,
                                     text=True,
                                     timeout=300 # 5 minute timeout
