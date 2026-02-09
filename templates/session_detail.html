@@ -220,24 +220,25 @@
         <div class="card-body">
             <div class="d-grid gap-2">
                 
-                {% set folder_exists = config.os_path_exists(session.directory_path) %}
-                <a href="/session/{{ session.id }}/action/retranscribe" 
+                {% set folder_exists = folder_exists_check(recording_session.directory_path) %}
+            
+                <a href="/session/{{ recording_session.id }}/action/retranscribe" 
                    class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
                    onclick="return confirm('Warning: This will overwrite all current transcripts for this session. Continue?')">
                     <i class="bi bi-mic"></i> Re-Transcribe Session
                     {% if not folder_exists %}<br><small>(Source files missing)</small>{% endif %}
                 </a>
 
-                {% set transcript_job = session.jobs | selectattr("step", "equalto", "transcribe") | first %}
+                {% set transcript_job = recording_session.jobs | selectattr("step", "equalto", "transcribe") | first %}
                 {% set can_summarize = transcript_job and transcript_job.status == 'completed' %}
                 
-                <a href="/session/{{ session.id }}/action/regenerate_summary" 
+                <a href="/session/{{ recording_session.id }}/action/regenerate_summary" 
                    class="btn btn-outline-success {% if not can_summarize %}disabled{% endif %}"
                    onclick="return confirm('This will generate a new summary and post it to Discord. Continue?')">
                     <i class="bi bi-magic"></i> Re-Generate & Post Recap
                 </a>
 
-                <a href="/download/{{ session.id }}/transcript" class="btn btn-outline-secondary {% if not can_summarize %}disabled{% endif %}">
+                <a href="/download/{{ recording_session.id }}/transcript" class="btn btn-outline-secondary {% if not can_summarize %}disabled{% endif %}">
                     <i class="bi bi-download"></i> Download Transcript
                 </a>
 

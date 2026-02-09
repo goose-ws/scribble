@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 from flask_sqlalchemy import SQLAlchemy
 from config import load_config
 
@@ -16,17 +17,21 @@ def init_db(app):
     elif db_type == 'postgres':
         # postgresql://user:password@host/dbname
         user = config.get('db_username')
-        pw = config.get('db_password')
+        # URL encode the password to handle special chars like @ safely
+        pw = urllib.parse.quote_plus(config.get('db_password'))
         host = config.get('db_address')
         dbname = config.get('db_name')
+        
         db_uri = f"postgresql://{user}:{pw}@{host}/{dbname}"
         
     elif db_type == 'mariadb':
         # mysql+pymysql://user:password@host/dbname
         user = config.get('db_username')
-        pw = config.get('db_password')
+        # URL encode the password to handle special chars like @ safely
+        pw = urllib.parse.quote_plus(config.get('db_password'))
         host = config.get('db_address')
         dbname = config.get('db_name')
+        
         db_uri = f"mysql+pymysql://{user}:{pw}@{host}/{dbname}"
         
     else:

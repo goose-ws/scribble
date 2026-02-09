@@ -31,6 +31,14 @@ def inject_version():
 # Initialize Database
 init_db(app)
 
+@app.context_processor
+def utility_processor():
+    """Inject os.path.exists into templates as 'folder_exists_check'"""
+    def folder_exists_check(path):
+        return os.path.exists(path)
+    
+    return dict(folder_exists_check=folder_exists_check)
+
 # --- AUTH DECORATOR ---
 def login_required(f):
     @wraps(f)
