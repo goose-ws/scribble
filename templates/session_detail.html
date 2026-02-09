@@ -213,6 +213,37 @@
             {% endfor %}
         </div>
     </div>
+    <div class="card shadow mb-4">
+        <div class="card-header bg-warning text-dark py-3">
+            <h6 class="m-0 font-weight-bold"><i class="bi bi-tools"></i> Session Actions</h6>
+        </div>
+        <div class="card-body">
+            <div class="d-grid gap-2">
+                
+                {% set folder_exists = config.os_path_exists(session.directory_path) %}
+                <a href="/session/{{ session.id }}/action/retranscribe" 
+                   class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
+                   onclick="return confirm('Warning: This will overwrite all current transcripts for this session. Continue?')">
+                    <i class="bi bi-mic"></i> Re-Transcribe Session
+                    {% if not folder_exists %}<br><small>(Source files missing)</small>{% endif %}
+                </a>
+
+                {% set transcript_job = session.jobs | selectattr("step", "equalto", "transcribe") | first %}
+                {% set can_summarize = transcript_job and transcript_job.status == 'completed' %}
+                
+                <a href="/session/{{ session.id }}/action/regenerate_summary" 
+                   class="btn btn-outline-success {% if not can_summarize %}disabled{% endif %}"
+                   onclick="return confirm('This will generate a new summary and post it to Discord. Continue?')">
+                    <i class="bi bi-magic"></i> Re-Generate & Post Recap
+                </a>
+
+                <a href="/download/{{ session.id }}/transcript" class="btn btn-outline-secondary {% if not can_summarize %}disabled{% endif %}">
+                    <i class="bi bi-download"></i> Download Transcript
+                </a>
+
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>

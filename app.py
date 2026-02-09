@@ -4,6 +4,8 @@ import zipfile
 import shutil
 import pytz
 import re
+import requests
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.utils import secure_filename
@@ -21,7 +23,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.1.1'
+APP_VERSION = '4.1.2'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -44,6 +46,49 @@ def inject_config():
         config=load_config(),
         system_mode=os.environ.get('SCRIBBLE_MODE', 'standard')
     )
+
+# --- Update Checker Logic ---
+LATEST_VERSION_CACHE = None
+LAST_CHECK_TIME = 0
+CHECK_INTERVAL = 3600  # Check once per hour
+
+def get_remote_version():
+    """Fetches the APP_VERSION string from the main GitHub repo."""
+    global LATEST_VERSION_CACHE, LAST_CHECK_TIME
+    
+    # Return cached version if valid
+    if LATEST_VERSION_CACHE and (time.time() - LAST_CHECK_TIME < CHECK_INTERVAL):
+        return LATEST_VERSION_CACHE
+
+    try:
+        url = 'https://raw.githubusercontent.com/goose-ws/scribble/refs/heads/main/app.py'
+        # Set a short timeout so we don't hang the page if GitHub is slow
+        resp = requests.get(url, timeout=3)
+        
+        if resp.status_code == 200:
+            # Regex to find: APP_VERSION = 'x.x.x'
+            match = re.search(r"APP_VERSION\s*=\s*['\"]([\d\.]+)['\"]", resp.text)
+            if match:
+                LATEST_VERSION_CACHE = match.group(1)
+                LAST_CHECK_TIME = time.time()
+                return LATEST_VERSION_CACHE
+    except Exception:
+        pass # Fail silently if offline or GitHub is down
+    
+    return None
+
+@app.context_processor
+def inject_update_status():
+    """Makes 'update_available' and 'latest_version' variables available to all templates."""
+    remote_ver = get_remote_version()
+    is_update = False
+    
+    # Simple check: If remote exists and doesn't match local
+    # (We assume 'APP_VERSION' is defined globally in your app.py)
+    if remote_ver and remote_ver != APP_VERSION:
+        is_update = True
+        
+    return dict(update_available=is_update, latest_version=remote_ver)
 
 def parse_llm_stats(summary_text):
     """Extracts stats from the markdown header we generated."""
@@ -544,6 +589,77 @@ def session_detail(session_id):
                          user_metrics=user_metrics,
                          integrations=integrations,
                          total_duration=total_duration) # Pass to template
+
+@app.route('/session/<int:session_id>/action/<action_type>')
+@login_required
+def session_action(session_id, action_type):
+    session = Session.query.get_or_404(session_id)
+    
+    # 1. Force Re-Transcribe (All Users)
+    if action_type == 'retranscribe':
+        # Check if source files exist
+        if not os.path.exists(session.directory_path):
+            flash('Error: Session directory not found. Cannot re-transcribe.', 'danger')
+            return redirect(url_for('session_detail', session_id=session.id))
+            
+        transcribe_job = Job.query.filter_by(session_id=session.id, step='transcribe').first()
+        if transcribe_job:
+            transcribe_job.status = 'pending'
+            transcribe_job.logs += f"\n\n--- User forced re-transcription ---\n"
+            session.status = "Processing" # Set session back to processing
+            db.session.commit()
+            flash('Transcription queued for retry.', 'success')
+
+    # 2. Rebuild Transcript Only (Merge DB -> TXT)
+    elif action_type == 'rebuild_transcript':
+        try:
+            # Fetch all user transcripts for this session
+            transcripts = Transcript.query.filter_by(session_id=session.id).all()
+            if not transcripts:
+                flash('No transcripts found in database to rebuild.', 'warning')
+                return redirect(url_for('session_detail', session_id=session.id))
+
+            # Merge logic (Simple timestamp sort)
+            # Note: This relies on the content stored in DB being "clean" text
+            # Depending on how you store it, you might need parsing logic here.
+            # For now, we assume standard usage.
+            
+            # Since the DB stores blocks of text, we can't easily resort line-by-line 
+            # without parsing timestamps. 
+            # A simpler way: Just trigger the transcription job's finalize step? 
+            # No, that's hard to target.
+            # Let's just flash a warning that this requires raw files for now 
+            # OR just re-generate the file if it's missing.
+            
+            # actually, let's skip complex logic and just re-dump what we have
+            flash('Rebuild not fully implemented without raw timestamp data in DB. Please use "Re-Transcribe".', 'warning')
+            
+        except Exception as e:
+            flash(f'Rebuild failed: {str(e)}', 'danger')
+
+    # 3. Re-Generate Summary (LLM + Discord)
+    elif action_type == 'regenerate_summary':
+        # Check if we have a transcript to summarize
+        transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
+        if not os.path.exists(transcript_path) and not session.transcript_text:
+             flash('Error: No transcript found. Please transcribe first.', 'danger')
+             return redirect(url_for('session_detail', session_id=session.id))
+
+        summary_job = Job.query.filter_by(session_id=session.id, step='summarize').first()
+        if summary_job:
+            summary_job.status = 'pending'
+            summary_job.logs += f"\n\n--- User forced summary re-generation ---\n"
+            session.status = "Processing"
+            db.session.commit()
+            flash('Summary generation queued.', 'success')
+        else:
+             # Create it if it's missing
+             new_job = Job(session_id=session.id, step='summarize', status='pending')
+             db.session.add(new_job)
+             db.session.commit()
+             flash('Summary job created and queued.', 'success')
+
+    return redirect(url_for('session_detail', session_id=session.id))
 
 # In session_status_api
 @app.route('/session/<int:session_id>/status')
