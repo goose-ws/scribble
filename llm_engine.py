@@ -352,8 +352,18 @@ def run_summary(job, config, post_to_discord_enabled=True):
     session = Session.query.get(job.session_id)
     
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
+    
+    # [FIX] Check for file, if missing try to restore from DB
     if not os.path.exists(transcript_path):
-         raise Exception("Transcript file not found.")
+        if session.transcript_text:
+            # Ensure folder exists
+            os.makedirs(session.directory_path, exist_ok=True)
+            # Write DB content to file so LLM provider can read it
+            with open(transcript_path, 'w', encoding='utf-8') as f:
+                f.write(session.transcript_text)
+            job.logs += "\n[System] Restored transcript file from database."
+        else:
+             raise Exception("Transcript file not found (Disk or DB).")
 
     prompt = session.campaign.system_prompt
     if not prompt:
@@ -376,11 +386,9 @@ def run_summary(job, config, post_to_discord_enabled=True):
             raise Exception(f"Unknown Provider: {provider}")
 
         # 2. Format Date (LOCAL TIME)
-        # Using pytz to ensure correct local date based on TZ env var
         target_tz_str = os.environ.get('TZ', 'UTC')
         try:
             local_tz = pytz.timezone(target_tz_str)
-            # Ensure session_date is UTC aware
             utc_dt = session.session_date.replace(tzinfo=pytz.utc)
             local_dt = utc_dt.astimezone(local_tz)
             formatted_date = local_dt.strftime("%B %-d, %Y")
@@ -388,7 +396,7 @@ def run_summary(job, config, post_to_discord_enabled=True):
             logging.error(f"Timezone error: {e}")
             formatted_date = session.session_date.strftime("%B %d, %Y")
 
-        # 3. Construct Header (Matching Bash Logic)
+        # 3. Construct Header
         tokens = stats['tokens']
         header = (
             f"## {formatted_date} Session Recap\n\n"
@@ -425,7 +433,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
         job.logs += f"\nLLM Error: {str(e)}"
         raise e
 
-# 2. Add new standalone function
 def run_discord_post(job, config):
     session = Session.query.get(job.session_id)
     
@@ -441,8 +448,6 @@ def run_discord_post(job, config):
     if not session.campaign.discord_webhook:
         raise Exception("No Discord Webhook configured for this campaign.")
 
-    # Format Date (Re-use logic or just use string)
-    # Ideally we re-parse date, but for now using session.session_date is fine
     formatted_date = session.session_date.strftime("%B %-d, %Y")
     
     job.logs += f"\nPosting existing summary to Discord..."

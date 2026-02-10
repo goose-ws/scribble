@@ -1,5 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+    .editable-textarea {
+        width: 100%;
+        min-height: 500px;
+        font-family: monospace;
+        font-size: 0.9rem;
+        border: 1px solid #ced4da;
+        padding: 10px;
+        resize: vertical;
+    }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
         <h2>Session: {{ recording_session.original_filename }}</h2>
@@ -34,6 +46,7 @@
         </div>
     </div>
 </div>
+
 <div class="card mb-3 shadow-sm">
     <div class="card-header bg-white py-2">
         <strong class="text-muted"><i class="bi bi-bar-chart-fill"></i> Session Analytics</strong>
@@ -47,7 +60,7 @@
                     <li><strong>Provider:</strong> {{ llm_stats.get('provider', 'N/A') }}</li>
                     <li><strong>Model:</strong> {{ llm_stats.get('model', 'N/A') }}</li>
                     <li><strong>API Time:</strong> {{ llm_stats.get('api_time', 'N/A') }}</li>
-                    <li><strong>Tokens:</strong> {{ llm_stats.get('tokens', '') }}</li>
+                    <li><strong>Tokens:</strong> {{ llm_stats.get('tokens') if llm_stats.get('tokens') else 'N/A' }}</li>
                 </ul>
             </div>
 
@@ -86,8 +99,8 @@
                         <thead>
                             <tr class="text-muted border-bottom">
                                 <th>User</th>
-                                <th class="text-end">Whisper Processing Time</th>
-                                <th class="text-end">Transcribed Word Count</th>
+                                <th class="text-end">Time</th>
+                                <th class="text-end">Words</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -95,7 +108,7 @@
                             <tr>
                                 <td class="fw-bold">{{ user }}</td>
                                 <td class="text-end font-monospace">{{ stats.duration }}</td>
-                                <td class="text-end font-monospace">{{ stats.words }}</td>
+                                <td class="text-end font-monospace">{{ "{:,}".format(stats.get('words', 0)) }}</td>
                             </tr>
                             {% else %}
                                 <tr><td colspan="3" class="text-center text-muted">No data</td></tr>
@@ -119,6 +132,7 @@
         </div>
     </div>
 </div>
+
 <div class="row">
     <div class="col-lg-7">
         <ul class="nav nav-tabs" id="sessionTabs" role="tablist">
@@ -134,33 +148,41 @@
         </ul>
         
         <div class="tab-content" id="sessionTabsContent">
+            
             <div class="tab-pane fade show active" id="master" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
-                    <div class="card-body p-0">
-                        <div id="transcript-content" class="p-3" style="max-height: 700px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
-                            {% if transcript %}
-                                {{ transcript }}
-                            {% else %}
-                                <div class="text-center text-muted p-5">
-                                    <p>Transcript has not been generated yet.</p>
-                                    <div class="spinner-border text-primary" role="status"></div>
-                                </div>
-                            {% endif %}
+                    <div class="card-header bg-light d-flex justify-content-between py-1">
+                        <small class="text-muted">Master Transcript (Editable)</small>
+                        <div>
+                            <a href="/session/{{ recording_session.id }}/download/transcript" class="btn btn-sm btn-outline-secondary">Download<i class="bi bi-download"></i></a>
                         </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <form action="/session/{{ recording_session.id }}/save_master_transcript" method="POST">
+                            <textarea name="content" class="editable-textarea border-0 p-3">{{ transcript }}</textarea>
+                            <div class="d-grid p-2">
+                                <button type="submit" class="btn btn-sm btn-success">Save Changes</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
 
             <div class="tab-pane fade" id="recap" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
-                    <div class="card-body p-0">
-                        <div id="recap-content" class="p-3" style="max-height: 700px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;">
-                            {% if recording_session.summary_text %}
-                                {{ recording_session.summary_text }}
-                            {% else %}
-                                <div class="text-center text-muted p-5">Recap not available yet.</div>
-                            {% endif %}
+                    <div class="card-header bg-light d-flex justify-content-between py-1">
+                        <small class="text-muted">Recap (Markdown Editable)</small>
+                        <div>
+                            <a href="/session/{{ recording_session.id }}/download/recap" class="btn btn-sm btn-outline-secondary">Download<i class="bi bi-download"></i></a>
                         </div>
+                    </div>
+                    <div class="card-body p-0">
+                         <form action="/session/{{ recording_session.id }}/save_recap" method="POST">
+                            <textarea name="content" class="editable-textarea border-0 p-3">{{ recording_session.summary_text or '' }}</textarea>
+                            <div class="d-grid p-2">
+                                <button type="submit" class="btn btn-sm btn-success">Save Changes</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -168,13 +190,27 @@
             <div class="tab-pane fade" id="users" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
                     <div class="card-body p-3">
-                        <select id="user-select" class="form-select mb-3" onchange="showUserTranscript()">
-                            <option value="">Select a User...</option>
-                            {% for username, content in user_transcripts.items() %}
-                            <option value="{{ username }}">{{ username }}</option>
-                            {% endfor %}
-                        </select>
-                        <div id="user-transcript-display" style="max-height: 600px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; font-size: 0.9rem; background: #f8f9fa; padding: 1rem; border: 1px solid #dee2e6;"></div>
+                        <div class="d-flex justify-content-between mb-3">
+                            <select id="user-select" class="form-select w-50" onchange="showUserTranscript()">
+                                <option value="">Select a User...</option>
+                                {% for username in user_transcripts.keys() %}
+                                <option value="{{ username }}">{{ username }}</option>
+                                {% endfor %}
+                            </select>
+                            
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-secondary" onclick="downloadCurrentUser()"><i class="bi bi-download">Download</i></button>
+                                <button type="button" class="btn btn-outline-danger" onclick="retranscribeCurrentUser()" title="Requires Original Zip File"><i class="bi bi-mic">Re-Transcribe User</i></button>
+                            </div>
+                        </div>
+
+                        <form id="user-edit-form" action="/session/{{ recording_session.id }}/save_user_transcript" method="POST">
+                            <input type="hidden" name="username" id="form-username">
+                            <textarea name="content" id="user-textarea" class="editable-textarea"></textarea>
+                            <div class="d-grid mt-2">
+                                <button type="submit" class="btn btn-sm btn-success">Save User Transcript</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -214,147 +250,89 @@
                 </div>
             </div>
             {% endfor %}
-            
-            <div class="card shadow mb-4">
-                <div class="card-header bg-warning text-dark py-3">
-                    <h6 class="m-0 font-weight-bold"><i class="bi bi-tools"></i> Session Actions</h6>
-                </div>
-                <div class="card-body">
-                    <div class="d-grid gap-2">
-                        
-                        {% set folder_exists = folder_exists_check(recording_session.directory_path) %}
+        </div>
+
+        <div class="card shadow mb-4 mt-3">
+            <div class="card-header bg-warning text-dark py-3">
+                <h6 class="m-0 font-weight-bold"><i class="bi bi-tools"></i> Session Actions</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
                     
-                        <a href="/session/{{ recording_session.id }}/action/retranscribe" 
-                           class="btn btn-outline-primary"
-                           onclick="return confirm('Warning: This will overwrite all current transcripts for this session. Continue?')">
-                            <i class="bi bi-mic"></i> Re-Transcribe Session
-                        </a>
+                    {% set folder_exists = folder_exists_check(recording_session.directory_path) %}
+                
+                    <a href="/session/{{ recording_session.id }}/action/retranscribe" 
+                       class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
+                       onclick="return confirm('Warning: Overwrite ALL transcripts?')">
+                        <i class="bi bi-mic-fill"></i> Re-Transcribe Session (Full)
+                    </a>
+                    {% if not folder_exists %}
+                        <small class="text-danger text-center">Audio files not found in Input or Archive.</small>
+                    {% endif %}
 
-                        {% set transcript_job = recording_session.jobs | selectattr("step", "equalto", "transcribe") | first %}
-                        {% set can_summarize = transcript_job and transcript_job.status == 'completed' %}
-                        
-                        <a href="/session/{{ recording_session.id }}/action/regenerate_summary" 
-                           class="btn btn-outline-warning {% if not can_summarize %}disabled{% endif %}"
-                           onclick="return confirm('Regenerate summary? This will overwrite the current text.')">
-                            <i class="bi bi-cpu"></i> Re-Generate Recap
-                        </a>
+                    <a href="/session/{{ recording_session.id }}/action/rebuild_transcript" 
+                       class="btn btn-outline-info">
+                        <i class="bi bi-layers-half"></i> Re-Generate Master Transcript
+                    </a>
+                    <small class="text-muted text-center lh-1" style="font-size: 0.7em;">
+                        Merges current User Transcripts into Master
+                    </small>
 
-                        {% set has_summary = recording_session.summary_text %}
-                        <a href="/session/{{ recording_session.id }}/action/post_discord" 
-                           class="btn btn-outline-primary {% if not has_summary %}disabled{% endif %}"
-                           onclick="return confirm('Post the CURRENT summary to Discord?')">
-                            <i class="bi bi-discord"></i> Post to Discord
-                        </a>
-                    </div>
+                    <a href="/session/{{ recording_session.id }}/action/regenerate_summary" 
+                       class="btn btn-outline-warning"
+                       onclick="return confirm('Overwrite current recap?')">
+                        <i class="bi bi-cpu"></i> Re-Generate Recap
+                    </a>
+                    
+                    <a href="/session/{{ recording_session.id }}/action/rerun_scripts" 
+                       class="btn btn-outline-secondary">
+                        <i class="bi bi-terminal"></i> Re-Run Scripts
+                    </a>
+
+                    <a href="/session/{{ recording_session.id }}/action/post_discord" 
+                       class="btn btn-outline-primary">
+                        <i class="bi bi-discord"></i> Post to Discord
+                    </a>
                 </div>
             </div>
-            
-            
         </div>
     </div>
 </div>
 
 <script>
-    const sessionId = {{ recording_session.id }};
-    
-    // Initialize with data from Server (Fixes empty list on load)
+    // Initialize with data from Server
     let userDataStore = {{ user_transcripts | tojson }};
-
-    function updateBadgeClass(element, status) {
-        // ... (Keep existing function) ...
-        element.className = 'badge ms-2';
-        if (status === 'completed') element.classList.add('bg-success');
-        else if (status === 'processing') element.classList.add('bg-warning', 'text-dark');
-        else if (status === 'error') element.classList.add('bg-danger');
-        else element.classList.add('bg-secondary');
-        element.textContent = status;
-    }
-
+    
     function showUserTranscript() {
         const select = document.getElementById('user-select');
-        const display = document.getElementById('user-transcript-display');
+        const textarea = document.getElementById('user-textarea');
+        const hiddenInput = document.getElementById('form-username');
         const user = select.value;
         
+        hiddenInput.value = user;
+        
         if (user && userDataStore[user]) {
-            display.innerText = userDataStore[user];
+            textarea.value = userDataStore[user];
         } else {
-            display.innerText = "Select a user to view their individual transcript.";
+            textarea.value = "";
         }
     }
-
-    function fetchStatus() {
-        fetch(`/session/${sessionId}/status`)
-            .then(response => response.json())
-            .then(data => {
-                // ... (Keep Session/Master/Recap updates) ...
-                const sessionBadge = document.getElementById('session-status-badge');
-                if (sessionBadge) sessionBadge.textContent = data.session_status;
-                
-                // Update Master
-                const transcriptDiv = document.getElementById('transcript-content');
-                if (data.transcript_ready && transcriptDiv.innerText !== data.transcript) {
-                    transcriptDiv.innerText = data.transcript;
-                }
-                
-                // Update Recap
-                const recapDiv = document.getElementById('recap-content');
-                if (data.summary && recapDiv.innerText !== data.summary) {
-                    recapDiv.innerText = data.summary;
-                }
-
-                // Update User Transcripts (Live)
-                if (data.user_transcripts) {
-                    // Update the local store with fresh data
-                    userDataStore = data.user_transcripts;
-                    
-                    const select = document.getElementById('user-select');
-                    // Only add new options if they are missing
-                    // We iterate the API data, check if option exists, if not add it.
-                    for (const [user, text] of Object.entries(data.user_transcripts)) {
-                         let exists = false;
-                         for (let i = 0; i < select.options.length; i++) {
-                             if (select.options[i].value === user) {
-                                 exists = true;
-                                 break;
-                             }
-                         }
-                         if (!exists) {
-                             const option = document.createElement('option');
-                             option.value = user;
-                             option.text = user;
-                             select.appendChild(option);
-                         }
-                    }
-                    
-                    // Refresh display if currently viewing a user
-                    if (select.value) showUserTranscript();
-                }
-
-                // ... (Keep Jobs update logic) ...
-                const accordion = document.getElementById('jobAccordion');
-                data.jobs.forEach(job => {
-                    const existingCard = document.getElementById(`job-card-${job.id}`);
-                    if (existingCard) {
-                        const statusBadge = document.getElementById(`job-status-${job.id}`);
-                        updateBadgeClass(statusBadge, job.status);
-                        document.getElementById(`job-time-${job.id}`).textContent = job.updated_at;
-                        const logsPre = document.getElementById(`job-logs-${job.id}`);
-                        if (logsPre.innerText.length !== job.logs.length) {
-                             logsPre.innerText = job.logs;
-                             if (job.status === 'processing') logsPre.scrollTop = logsPre.scrollHeight;
-                        }
-                        const retryDiv = document.getElementById(`job-retry-${job.id}`);
-                        if (job.status === 'error') retryDiv.classList.remove('d-none');
-                        else retryDiv.classList.add('d-none');
-                    } else {
-                        window.location.reload(); 
-                    }
-                });
-            })
-            .catch(error => console.error('Error fetching status:', error));
+    
+    function downloadCurrentUser() {
+        const user = document.getElementById('user-select').value;
+        if(user) window.location.href = `/session/{{ recording_session.id }}/download/user_${user}`;
     }
 
-    // Start Polling
-    setInterval(fetchStatus, 2000);
+    function retranscribeCurrentUser() {
+        const user = document.getElementById('user-select').value;
+        if(user) {
+            if(confirm(`Re-transcribe audio for ${user}? This requires the source files.`)) {
+                window.location.href = `/session/{{ recording_session.id }}/action/retranscribe_user_${user}`;
+            }
+        }
+    }
+    
+    // Initial Load
+    showUserTranscript();
 </script>
 {% endblock %}

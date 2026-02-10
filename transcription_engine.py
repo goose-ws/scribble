@@ -47,6 +47,8 @@ def run_transcription(job, config, app):
     job.logs += f"\nStarting transcription for: {session.original_filename}"
     db.session.commit()
     
+    target_user = getattr(job, 'target_user', None)
+    
     # 2. Configure Environment (HF_TOKEN)
     hf_token = config.get('hf_token')
     if hf_token:
@@ -87,6 +89,9 @@ def run_transcription(job, config, app):
             username = filename.split('-', 1)[1].rsplit('.', 1)[0]
         except:
             username = "Unknown"
+        
+        if target_user and username != target_user:
+            continue
         
         # Log Start with Timestamp (Crucial for Metrics Parser)
         timestamp = datetime.now().strftime('%H:%M:%S')

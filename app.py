@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_file, Response
 from sqlalchemy import func, case
 from config import load_config, save_config
 from database import init_db, db
@@ -136,7 +136,15 @@ def parse_llm_stats(summary_text):
     for key, pattern in patterns.items():
         match = re.search(pattern, summary_text)
         if match:
-            stats[key] = match.group(1)
+            val = match.group(1)
+            # [CHANGE] Add commas to token numbers for display
+            if key == 'tokens':
+                try:
+                    # Finds sequences of digits and applies comma formatting
+                    val = re.sub(r'\d+', lambda m: "{:,}".format(int(m.group(0))), val)
+                except Exception:
+                    pass
+            stats[key] = val
 
     return stats
 
@@ -578,6 +586,11 @@ def session_detail(session_id):
 
     # --- METRICS CALCULATIONS ---
     llm_stats = parse_llm_stats(session_obj.summary_text)
+    
+    # [FIX] This check must happen AFTER parse_llm_stats
+    if 'tokens' not in llm_stats:
+        llm_stats['tokens'] = None
+
     transcribe_job = next((j for j in jobs if j.step == 'transcribe'), None)
     user_metrics = {}
     if transcribe_job:
@@ -593,17 +606,14 @@ def session_detail(session_id):
         start_time = session_obj.created_at
 
         if session_obj.status == 'Completed':
-            # Use the timestamp of the last completed job
             last_job = Job.query.filter_by(session_id=session_obj.id).order_by(Job.updated_at.desc()).first()
             if last_job:
                 delta = last_job.updated_at - start_time
-                total_duration = str(delta).split('.')[0] # Remove microseconds
+                total_duration = str(delta).split('.')[0] 
         elif session_obj.status == 'Processing':
-            # Calculate time elapsed so far
             delta = datetime.utcnow() - start_time
             total_duration = str(delta).split('.')[0] + " (Running)"
         else:
-            # Error state or just uploaded
             if jobs:
                 last_job = jobs[-1]
                 delta = last_job.updated_at - start_time
@@ -623,85 +633,227 @@ def session_detail(session_id):
                          user_metrics=user_metrics,
                          integrations=integrations,
                          total_duration=total_duration,
-                         total_words=total_words) # Pass to template
+                         total_words=total_words)
+
+@app.route('/session/<int:session_id>/save_user_transcript', methods=['POST'])
+@login_required
+def save_user_transcript(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    username = request.form.get('username')
+    new_content = request.form.get('content')
+    
+    transcript = Transcript.query.filter_by(session_id=session_id, username=username).first()
+    if transcript:
+        transcript.content = new_content
+        db.session.commit()
+        
+        # Update disk file
+        try:
+            user_path = os.path.join(session_obj.directory_path, "transcripts", f"{username}_transcript.txt")
+            with open(user_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+        except Exception as e:
+            logging.error(f"Failed to save user transcript to disk: {e}")
+            
+        flash(f'Transcript for {username} updated.', 'success')
+    else:
+        flash('User transcript not found.', 'error')
+        
+    return redirect(url_for('session_detail', session_id=session_id))
+
+@app.route('/session/<int:session_id>/save_master_transcript', methods=['POST'])
+@login_required
+def save_master_transcript(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    new_content = request.form.get('content')
+    
+    session_obj.transcript_text = new_content
+    db.session.commit()
+    
+    # Update disk file
+    try:
+        path = os.path.join(session_obj.directory_path, "session_transcript.txt")
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+    except Exception as e:
+        logging.error(f"Failed to save master transcript to disk: {e}")
+
+    flash('Master transcript updated.', 'success')
+    return redirect(url_for('session_detail', session_id=session_id))
+
+@app.route('/session/<int:session_id>/save_recap', methods=['POST'])
+@login_required
+def save_recap(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    new_content = request.form.get('content')
+    
+    session_obj.summary_text = new_content
+    db.session.commit()
+    
+    # Update disk file
+    try:
+        path = os.path.join(session_obj.directory_path, "session_recap.txt")
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+    except Exception as e:
+        logging.error(f"Failed to save recap to disk: {e}")
+
+    flash('Recap updated.', 'success')
+    return redirect(url_for('session_detail', session_id=session_id))
+
+@app.route('/session/<int:session_id>/download/<file_type>')
+@login_required
+def download_file(session_id, file_type):
+    session_obj = Session.query.get_or_404(session_id)
+    
+    if file_type == 'recap':
+        content = session_obj.summary_text
+        filename = f"Recap_{session_obj.original_filename}.md"
+        mimetype = "text/markdown"
+    elif file_type == 'transcript':
+        content = session_obj.transcript_text
+        filename = f"Transcript_{session_obj.original_filename}.txt"
+        mimetype = "text/plain"
+    elif file_type.startswith('user_'):
+        username = file_type.split('user_', 1)[1]
+        t = Transcript.query.filter_by(session_id=session_id, username=username).first()
+        if t:
+            content = t.content
+            filename = f"{username}_{session_obj.original_filename}.txt"
+            mimetype = "text/plain"
+        else:
+            return "User transcript not found", 404
+    else:
+        return "Invalid file type", 400
+        
+    return Response(
+        content,
+        mimetype=mimetype,
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
 
 @app.route('/session/<int:session_id>/action/<action_type>')
 @login_required
 def session_action(session_id, action_type):
-    session = Session.query.get_or_404(session_id)
+    session_obj = Session.query.get_or_404(session_id)
     
-    # 1. Force Re-Transcribe (All Users)
-    if action_type == 'retranscribe':
-        # Check if source files exist
-        if not os.path.exists(session.directory_path):
-            flash('Error: Session directory not found. Cannot re-transcribe.', 'danger')
-            return redirect(url_for('session_detail', session_id=session.id))
-            
-        transcribe_job = Job.query.filter_by(session_id=session.id, step='transcribe').first()
-        if transcribe_job:
-            transcribe_job.status = 'pending'
-            transcribe_job.logs += f"\n\n--- User forced re-transcription ---\n"
-            session.status = "Processing" # Set session back to processing
-            db.session.commit()
-            flash('Transcription queued for retry.', 'success')
+    # Helper to restore archive if needed
+    def ensure_files_exist():
+        if os.path.exists(session_obj.directory_path):
+            if any(f.endswith('.flac') for f in os.listdir(session_obj.directory_path)):
+                return True
+        
+        archive_path = os.path.join('/data/archive', session_obj.original_filename)
+        if not os.path.exists(archive_path):
+            for f in os.listdir('/data/archive'):
+                if f.endswith(session_obj.original_filename):
+                    archive_path = os.path.join('/data/archive', f)
+                    break
+        
+        if os.path.exists(archive_path):
+            try:
+                os.makedirs(session_obj.directory_path, exist_ok=True)
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    zip_ref.extractall(session_obj.directory_path)
+                return True
+            except Exception as e:
+                flash(f"Error restoring from archive: {e}", "danger")
+                return False
+        return False
 
-    # 2. Rebuild Transcript Only (Merge DB -> TXT)
+    # 1. Force Re-Transcribe (All or Single)
+    if action_type == 'retranscribe' or action_type.startswith('retranscribe_user_'):
+        if not ensure_files_exist():
+            flash('Error: Source files not found in /data/input or /data/archive.', 'danger')
+            return redirect(url_for('session_detail', session_id=session_obj.id))
+            
+        target_user = None
+        if action_type.startswith('retranscribe_user_'):
+            target_user = action_type.split('retranscribe_user_', 1)[1]
+            step_name = f"transcribe:{target_user}"
+            flash(f'Re-transcription queued for user: {target_user}', 'success')
+        else:
+            step_name = "transcribe"
+            flash('Full session re-transcription queued.', 'success')
+
+        new_job = Job(session_id=session_obj.id, step=step_name, status='pending', logs="Queued by user...")
+        db.session.add(new_job)
+        session_obj.status = "Processing"
+        db.session.commit()
+
+    # 2. Rebuild Transcript (Merge Only)
     elif action_type == 'rebuild_transcript':
         try:
-            # Fetch all user transcripts for this session
-            transcripts = Transcript.query.filter_by(session_id=session.id).all()
-            if not transcripts:
-                flash('No transcripts found in database to rebuild.', 'warning')
-                return redirect(url_for('session_detail', session_id=session.id))
-
-            # Merge logic (Simple timestamp sort)
-            # Note: This relies on the content stored in DB being "clean" text
-            # Depending on how you store it, you might need parsing logic here.
-            # For now, we assume standard usage.
+            transcripts = Transcript.query.filter_by(session_id=session_obj.id).all()
+            all_lines = []
             
-            # Since the DB stores blocks of text, we can't easily resort line-by-line 
-            # without parsing timestamps. 
-            # A simpler way: Just trigger the transcription job's finalize step? 
-            # No, that's hard to target.
-            # Let's just flash a warning that this requires raw files for now 
-            # OR just re-generate the file if it's missing.
+            ts_pattern = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
             
-            # actually, let's skip complex logic and just re-dump what we have
-            flash('Rebuild not fully implemented without raw timestamp data in DB. Please use "Re-Transcribe".', 'warning')
+            for t in transcripts:
+                if not t.content: continue
+                for line in t.content.split('\n'):
+                    match = ts_pattern.match(line)
+                    if match:
+                        ts_str = match.group(1)
+                        h, m, s = map(int, ts_str.split(':'))
+                        seconds = h*3600 + m*60 + s
+                        all_lines.append((seconds, line))
+                    else:
+                        all_lines.append((999999, line))
+            
+            all_lines.sort(key=lambda x: x[0])
+            final_text = "\n".join([x[1] for x in all_lines])
+            
+            session_obj.transcript_text = final_text
+            db.session.commit()
+            
+            path = os.path.join(session_obj.directory_path, "session_transcript.txt")
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(final_text)
+                
+            flash('Master transcript rebuilt from user transcripts.', 'success')
             
         except Exception as e:
             flash(f'Rebuild failed: {str(e)}', 'danger')
 
-    # 3. Re-Generate Summary (LLM Only)
-    elif action_type == 'regenerate_summary':
-        # Check if transcript exists
-        transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
-        if not os.path.exists(transcript_path) and not session.transcript_text:
-             flash('Error: No transcript found.', 'danger')
-             return redirect(url_for('session_detail', session_id=session.id))
+    # 3. Rerun Scripts
+    elif action_type == 'rerun_scripts':
+        new_job = Job(session_id=session_obj.id, step='run_scripts', status='pending')
+        new_job.logs = "Queued for manual script execution..."
+        db.session.add(new_job)
+        db.session.commit()
+        flash('Scripts queued for execution.', 'success')
 
-        # Create new job specifically for generation
-        new_job = Job(session_id=session.id, step='summarize_only', status='pending')
+    # 4. Re-Generate Summary (LLM Only)
+    elif action_type == 'regenerate_summary':
+        # [FIXED] Changed 'session' to 'session_obj'
+        transcript_path = os.path.join(session_obj.directory_path, "session_transcript.txt")
+        if not os.path.exists(transcript_path) and not session_obj.transcript_text:
+             flash('Error: No transcript found.', 'danger')
+             return redirect(url_for('session_detail', session_id=session_obj.id))
+
+        new_job = Job(session_id=session_obj.id, step='summarize_only', status='pending')
         new_job.logs = "Queued for Summary Re-generation (No Discord)..."
         db.session.add(new_job)
-        session.status = "Processing"
+        session_obj.status = "Processing"
         db.session.commit()
         flash('Summary re-generation queued.', 'success')
 
-    # 4. Post to Discord (Discord Only)
+    # 5. Post to Discord (Discord Only)
     elif action_type == 'post_discord':
-        if not session.summary_text:
+        # [FIXED] Changed 'session' to 'session_obj'
+        if not session_obj.summary_text:
              flash('Error: No summary available to post.', 'danger')
-             return redirect(url_for('session_detail', session_id=session.id))
+             return redirect(url_for('session_detail', session_id=session_obj.id))
              
-        new_job = Job(session_id=session.id, step='post_discord', status='pending')
+        new_job = Job(session_id=session_obj.id, step='post_discord', status='pending')
         new_job.logs = "Queued for Discord Posting..."
         db.session.add(new_job)
-        session.status = "Processing"
+        session_obj.status = "Processing"
         db.session.commit()
         flash('Discord post queued.', 'success')
 
-    return redirect(url_for('session_detail', session_id=session.id))
+    return redirect(url_for('session_detail', session_id=session_obj.id))
 
 # In session_status_api
 @app.route('/session/<int:session_id>/status')
