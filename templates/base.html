@@ -17,19 +17,13 @@
     <div class="d-flex">
         {% if session.get('logged_in') %}
         <div class="sidebar p-3" style="width: 250px;">
-            <h3>Scribble</h3>
-            <span style="color: #999; font-size: 0.8em; margin-right: 10px;">v{{ app_version }}</span>
-            <div class="sidebar-footer">
-                <small class="text-muted">v{{ config.APP_VERSION }}</small>
-                
+            <h3><a href="/">Scribble</a></h3>
+            <span style="color: #999; font-size: 0.8em; margin-right: 10px;"><a href="https://github.com/goose-ws/scribble">v{{ app_version }}</a></span>
                 {% if update_available %}
-                    <div class="mt-1">
-                        <a href="https://github.com/goose-ws/scribble" target="_blank" class="badge bg-warning text-dark text-decoration-none">
-                            <i class="bi bi-arrow-up-circle"></i> Update: v{{ latest_version }}
-                        </a>
-                    </div>
+                        <div class="sidebar-footer badge bg-warning text-dark text-decoration-none">
+                            <i class="bi bi-arrow-up-circle"></i> Update available
+                        </div>
                 {% endif %}
-            </div>
             <hr>
             <a href="/">Dashboard</a>
             <a href="/upload">Upload</a>
