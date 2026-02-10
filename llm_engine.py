@@ -348,8 +348,7 @@ def send_discord(summary_text, webhook_url, title_date):
             time.sleep(1)
 
 # --- MAIN ENGINE ENTRY ---
-
-def run_summary(job, config):
+def run_summary(job, config, post_to_discord_enabled=True):
     session = Session.query.get(job.session_id)
     
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
@@ -411,12 +410,41 @@ def run_summary(job, config):
         
         job.logs += "\nSummary generated successfully."
         
-        # 5. Send to Discord
-        if session.campaign.discord_webhook:
-            job.logs += "\nSending to Discord..."
-            send_discord(final_content, session.campaign.discord_webhook, formatted_date)
-            job.logs += " Sent."
+        # 5. Send to Discord (CONDITIONAL)
+        if post_to_discord_enabled:
+            if session.campaign.discord_webhook:
+                job.logs += "\nSending to Discord..."
+                send_discord(final_content, session.campaign.discord_webhook, formatted_date)
+                job.logs += " Sent."
+            else:
+                job.logs += "\nDiscord Webhook not configured. Skipping."
+        else:
+            job.logs += "\nDiscord posting skipped (Generation Only)."
 
     except Exception as e:
         job.logs += f"\nLLM Error: {str(e)}"
         raise e
+
+# 2. Add new standalone function
+def run_discord_post(job, config):
+    session = Session.query.get(job.session_id)
+    
+    if not session.summary_text:
+        # Try loading from disk if DB is empty
+        recap_path = os.path.join(session.directory_path, "session_recap.txt")
+        if os.path.exists(recap_path):
+            with open(recap_path, 'r', encoding='utf-8') as f:
+                session.summary_text = f.read()
+        else:
+             raise Exception("No summary text found to post.")
+
+    if not session.campaign.discord_webhook:
+        raise Exception("No Discord Webhook configured for this campaign.")
+
+    # Format Date (Re-use logic or just use string)
+    # Ideally we re-parse date, but for now using session.session_date is fine
+    formatted_date = session.session_date.strftime("%B %-d, %Y")
+    
+    job.logs += f"\nPosting existing summary to Discord..."
+    send_discord(session.summary_text, session.campaign.discord_webhook, formatted_date)
+    job.logs += " Sent."

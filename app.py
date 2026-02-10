@@ -23,7 +23,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.1.2'
+APP_VERSION = '4.1.4'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -33,9 +33,30 @@ init_db(app)
 
 @app.context_processor
 def utility_processor():
-    """Inject os.path.exists into templates as 'folder_exists_check'"""
+    """Inject smart path check into templates."""
     def folder_exists_check(path):
-        return os.path.exists(path)
+        # 1. Happy path: The original folder exists
+        if os.path.exists(path):
+            return True
+            
+        # 2. Fallback: Check if it was archived to /data/archive
+        # We assume the archive name matches the folder name + extension
+        try:
+            archive_dir = '/data/archive'
+            session_name = os.path.basename(path.rstrip('/')) # Handle potential trailing slashes
+            
+            # Check for the specific pattern you verified: .flac.zip
+            if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")):
+                return True
+                
+            # Check for standard zip just in case
+            if os.path.exists(os.path.join(archive_dir, session_name + ".zip")):
+                return True
+                
+        except Exception:
+            return False
+            
+        return False
     
     return dict(folder_exists_check=folder_exists_check)
 
@@ -588,6 +609,11 @@ def session_detail(session_id):
                 delta = last_job.updated_at - start_time
                 total_duration = str(delta).split('.')[0]
 
+    total_words = 0
+    if transcript_text:
+        total_words = len(transcript_text.split())
+        total_words = "{:,}".format(total_words)
+
     return render_template('session_detail.html',
                          recording_session=session_obj,
                          jobs=jobs,
@@ -596,7 +622,8 @@ def session_detail(session_id):
                          llm_stats=llm_stats,
                          user_metrics=user_metrics,
                          integrations=integrations,
-                         total_duration=total_duration) # Pass to template
+                         total_duration=total_duration,
+                         total_words=total_words) # Pass to template
 
 @app.route('/session/<int:session_id>/action/<action_type>')
 @login_required
@@ -645,27 +672,34 @@ def session_action(session_id, action_type):
         except Exception as e:
             flash(f'Rebuild failed: {str(e)}', 'danger')
 
-    # 3. Re-Generate Summary (LLM + Discord)
+    # 3. Re-Generate Summary (LLM Only)
     elif action_type == 'regenerate_summary':
-        # Check if we have a transcript to summarize
+        # Check if transcript exists
         transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
         if not os.path.exists(transcript_path) and not session.transcript_text:
-             flash('Error: No transcript found. Please transcribe first.', 'danger')
+             flash('Error: No transcript found.', 'danger')
              return redirect(url_for('session_detail', session_id=session.id))
 
-        summary_job = Job.query.filter_by(session_id=session.id, step='summarize').first()
-        if summary_job:
-            summary_job.status = 'pending'
-            summary_job.logs += f"\n\n--- User forced summary re-generation ---\n"
-            session.status = "Processing"
-            db.session.commit()
-            flash('Summary generation queued.', 'success')
-        else:
-             # Create it if it's missing
-             new_job = Job(session_id=session.id, step='summarize', status='pending')
-             db.session.add(new_job)
-             db.session.commit()
-             flash('Summary job created and queued.', 'success')
+        # Create new job specifically for generation
+        new_job = Job(session_id=session.id, step='summarize_only', status='pending')
+        new_job.logs = "Queued for Summary Re-generation (No Discord)..."
+        db.session.add(new_job)
+        session.status = "Processing"
+        db.session.commit()
+        flash('Summary re-generation queued.', 'success')
+
+    # 4. Post to Discord (Discord Only)
+    elif action_type == 'post_discord':
+        if not session.summary_text:
+             flash('Error: No summary available to post.', 'danger')
+             return redirect(url_for('session_detail', session_id=session.id))
+             
+        new_job = Job(session_id=session.id, step='post_discord', status='pending')
+        new_job.logs = "Queued for Discord Posting..."
+        db.session.add(new_job)
+        session.status = "Processing"
+        db.session.commit()
+        flash('Discord post queued.', 'success')
 
     return redirect(url_for('session_detail', session_id=session.id))
 

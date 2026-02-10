@@ -95,7 +95,7 @@
                             <tr>
                                 <td class="fw-bold">{{ user }}</td>
                                 <td class="text-end font-monospace">{{ stats.duration }}</td>
-                                <td class="text-end">{{ stats.words }}</td>
+                                <td class="text-end font-monospace">{{ stats.words }}</td>
                             </tr>
                             {% else %}
                                 <tr><td colspan="3" class="text-center text-muted">No data</td></tr>
@@ -103,9 +103,12 @@
                         </tbody>
                         <tfoot class="border-top">
                             <tr>
-                                <td class="fw-bold text-dark">Total Time:</td>
-                                <td colspan="2" class="text-end fw-bold text-dark font-monospace">
+                                <td class="fw-bold text-dark">Totals:</td>
+                                <td class="text-end fw-bold text-dark font-monospace">
                                     {{ total_duration }}
+                                </td>
+                                <td class="text-end fw-bold text-dark font-monospace">
+                                    {{ total_words }}
                                 </td>
                             </tr>
                         </tfoot>
@@ -223,25 +226,26 @@
                 {% set folder_exists = folder_exists_check(recording_session.directory_path) %}
             
                 <a href="/session/{{ recording_session.id }}/action/retranscribe" 
-                   class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
+                   class="btn btn-outline-primary"
                    onclick="return confirm('Warning: This will overwrite all current transcripts for this session. Continue?')">
                     <i class="bi bi-mic"></i> Re-Transcribe Session
-                    {% if not folder_exists %}<br><small>(Source files missing)</small>{% endif %}
                 </a>
 
                 {% set transcript_job = recording_session.jobs | selectattr("step", "equalto", "transcribe") | first %}
                 {% set can_summarize = transcript_job and transcript_job.status == 'completed' %}
                 
                 <a href="/session/{{ recording_session.id }}/action/regenerate_summary" 
-                   class="btn btn-outline-success {% if not can_summarize %}disabled{% endif %}"
-                   onclick="return confirm('This will generate a new summary and post it to Discord. Continue?')">
-                    <i class="bi bi-magic"></i> Re-Generate & Post Recap
+                   class="btn btn-outline-warning {% if not can_summarize %}disabled{% endif %}"
+                   onclick="return confirm('Regenerate summary? This will overwrite the current text.')">
+                    <i class="bi bi-cpu"></i> Re-Generate Recap
                 </a>
 
-                <a href="/download/{{ recording_session.id }}/transcript" class="btn btn-outline-secondary {% if not can_summarize %}disabled{% endif %}">
-                    <i class="bi bi-download"></i> Download Transcript
+                {% set has_summary = recording_session.summary_text %}
+                <a href="/session/{{ recording_session.id }}/action/post_discord" 
+                   class="btn btn-outline-primary {% if not has_summary %}disabled{% endif %}"
+                   onclick="return confirm('Post the CURRENT summary to Discord?')">
+                    <i class="bi bi-discord"></i> Post to Discord
                 </a>
-
             </div>
         </div>
     </div>

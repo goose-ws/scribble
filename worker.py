@@ -60,21 +60,42 @@ class JobManager(threading.Thread):
                 from transcription_engine import run_transcription
                 run_transcription(job, config, self.app)
                 
+                # Check if next step already exists (avoid duplicates on retry)
                 existing_next = Job.query.filter_by(session_id=job.session_id, step='summarize').first()
                 if not existing_next:
                     new_job = Job(session_id=job.session_id, step='summarize', status='pending')
                     db.session.add(new_job)
                     
             elif job.step == 'summarize':
+                # Standard Auto-Flow: Generate + Post
                 from llm_engine import run_summary
-                run_summary(job, config)
+                run_summary(job, config, post_to_discord_enabled=True)
+
+            elif job.step == 'summarize_only':
+                # Manual Re-Gen: Generate ONLY (Skip Discord)
+                from llm_engine import run_summary
+                run_summary(job, config, post_to_discord_enabled=False)
+
+            elif job.step == 'post_discord':
+                # Manual Post: Discord ONLY
+                from llm_engine import run_discord_post
+                run_discord_post(job, config)
                 
-                # Fetch session to access campaign scripts
+                # Exit early (Skip scripts/cleanup for just a discord post)
+                job.status = 'completed'
+                db.session.commit()
+                return
+
+            # --- SHARED SCRIPT & CLEANUP LOGIC ---
+            # Applies to 'summarize' and 'summarize_only'
+            if job.step in ['summarize', 'summarize_only']:
+                
+                # Fetch session to access campaign scripts and paths
                 session = Session.query.get(job.session_id)
                 recap_path = os.path.join(session.directory_path, "session_recap.txt")
                 transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
                 
-                # --- CAMPAIGN SCRIPTS LOGIC ---
+                # 1. Execute Campaign Scripts
                 if session.campaign.script_paths:
                     scripts = session.campaign.script_paths.split(',')
                     job.logs += f"\n\n--- Executing {len(scripts)} Campaign Scripts ---"
@@ -93,7 +114,7 @@ class JobManager(threading.Thread):
                             db.session.commit()
                             
                             try:
-                                # Pass recap path as $1
+                                # Pass recap path as $1, transcript path as $2
                                 result = subprocess.run(
                                     [script_full_path, recap_path, transcript_path],
                                     capture_output=True,
@@ -117,16 +138,15 @@ class JobManager(threading.Thread):
                             job.logs += f"\nSkipping: {script_name} (File not found)"
                         
                         db.session.commit()
-                # ------------------------------
 
-                # Update Status
+                # 2. Update Status
                 session.status = "Completed"
                 job.status = 'completed'
                 db.session.commit()
                 
-                # --- CLEANUP LOGIC ---
+                # 3. Cleanup Logic
                 try:
-                    # 1. Archive Zip
+                    # Archive Zip
                     if config.get('archive_zip'):
                         zip_path = os.path.join(session.directory_path, session.original_filename)
                         archive_dir = '/data/archive'
@@ -141,10 +161,15 @@ class JobManager(threading.Thread):
                             shutil.move(zip_path, dest_path)
                             job.logs += f"\nArchived zip to: {dest_path}"
                     
-                    # 2. Delete Working Directory
-                    if os.path.exists(session.directory_path):
-                        shutil.rmtree(session.directory_path)
-                        job.logs += f"\nCleaned up working directory: {session.directory_path}"
+                    # Delete Working Directory (Optional Space Saver)
+                    # Note: If you plan to re-generate often, you might want to disable this 
+                    # or rely on 'Re-Transcribe' to restore files.
+                    if config.get('db_space_saver') and os.path.exists(session.directory_path):
+                        # We only delete if space saver is ON, otherwise we keep files for re-generation
+                        # (Adjust this logic based on your preference)
+                         # shutil.rmtree(session.directory_path)
+                         # job.logs += f"\nCleaned up working directory."
+                         pass
                         
                     db.session.commit()
                     
