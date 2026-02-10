@@ -65,40 +65,67 @@
     </div>
 </div>
 
-<div class="card">
-    <div class="card-header">Recent Sessions</div>
+<div class="card shadow-sm">
+    <div class="card-header bg-white py-3">
+        <h5 class="mb-0 card-title">Recent Sessions</h5>
+    </div>
     <div class="table-responsive">
-        <table class="table table-hover mb-0 align-middle">
+        <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
-                    <th>Date</th>
-                    <th>Campaign</th>
+                    <th class="text-center" style="width: 60px;">#</th>
+                    <th style="width: 180px;">Date</th>
+                    <th style="width: 150px;">Campaign</th>
                     <th>Filename</th>
-                    <th>Status</th>
-                    <th>Action</th>
+                    <th class="text-center" style="width: 120px;">Status</th>
+                    <th class="text-end" style="width: 100px;">Action</th>
                 </tr>
             </thead>
             <tbody>
                 {% for session in sessions %}
                 <tr>
-                    <td>{{ session.local_time_str }}</td>
-                    <td><span class="badge bg-light text-dark border">{{ session.campaign.name }}</span></td>
-                    <td class="small font-monospace">{{ session.original_filename }}</td>
+                    <td class="text-center fw-bold text-secondary bg-light">
+                        {{ session.session_number }}
+                    </td>
+                    
+                    <td class="text-nowrap">
+                        {{ session.local_time_str }}
+                    </td>
+                    
                     <td>
-                        <span class="badge 
+                        <span class="badge bg-light text-dark border fw-normal">
+                            {{ session.campaign.name }}
+                        </span>
+                    </td>
+                    
+                    <td style="max-width: 0;">
+                        <div class="text-truncate font-monospace small text-muted" title="{{ session.original_filename }}">
+                            {{ session.original_filename }}
+                        </div>
+                    </td>
+                    
+                    <td class="text-center">
+                        <span class="badge rounded-pill
                             {% if session.status == 'Completed' %}bg-success
                             {% elif session.status == 'Processing' %}bg-warning text-dark
+                            {% elif session.status == 'Error' %}bg-danger
                             {% else %}bg-secondary{% endif %}">
                             {{ session.status }}
                         </span>
                     </td>
-                    <td>
-                        <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn btn-sm btn-primary">View</a>
+                    
+                    <td class="text-end pe-3">
+                        <a href="{{ url_for('session_detail', session_id=session.id) }}" class="btn btn-sm btn-outline-primary border-0">
+                            View <i class="bi bi-chevron-right"></i>
+                        </a>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="text-center py-4 text-muted">No sessions found. Upload one to get started!</td>
+                    <td colspan="6" class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        No sessions found. Upload one to get started!
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

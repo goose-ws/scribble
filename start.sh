@@ -21,10 +21,18 @@ if [ -n "$PUID" ] && [ -n "$PGID" ]; then
     chown -R "$PUID":"$PGID" /data
     chown -R "$PUID":"$PGID" /app
 
+    # [NEW] Check & Run Database Migration
+    echo "Checking for database migrations..."
+    su scribble_user -c "python3 migrate_sessions.py"
+
     echo "Starting Scribble as scribble_user..."
     # Switch user and run gunicorn
     exec su scribble_user -c "gunicorn --workers 1 --threads 4 --bind 0.0.0.0:13131 app:app"
 else
+    # [NEW] Check & Run Database Migration
+    echo "Checking for database migrations..."
+    python3 migrate_sessions.py
+
     echo "Starting Scribble as root (Not Recommended)..."
     exec gunicorn --workers 1 --threads 4 --bind 0.0.0.0:13131 app:app
 fi

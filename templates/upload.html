@@ -1,104 +1,175 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Upload Session</h2>
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload Session</h4>
+                </div>
+                <div class="card-body">
+                    
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Select Campaign</label>
+                            <select class="form-select" name="campaign_id" id="campaignSelect" required>
+                                <option value="" disabled {% if not default_campaign_id %}selected{% endif %}>-- Choose Campaign --</option>
+                                {% for campaign in campaigns %}
+                                <option value="{{ campaign.id }}" {% if campaign.id == default_campaign_id %}selected{% endif %}>
+                                    {{ campaign.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% if not campaigns %}
+                            <div class="form-text text-danger">
+                                <i class="bi bi-exclamation-circle"></i> You must create a campaign in <a href="/campaigns">Campaigns</a> first!
+                            </div>
+                            {% endif %}
+                        </div>
 
-<div class="card col-md-8 mx-auto">
-    <div class="card-body">
-        <form id="uploadForm">
-            <div class="mb-3">
-                <label class="form-label">Select Campaign</label>
-                <select name="campaign_id" class="form-select" required>
-                    <option value="" disabled selected>-- Choose Campaign --</option>
-                    {% for campaign in campaigns %}
-                    <option value="{{ campaign.id }}">{{ campaign.name }}</option>
-                    {% endfor %}
-                </select>
-                {% if not campaigns %}
-                <div class="form-text text-danger">You must create a campaign in settings first!</div>
-                {% endif %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Session Number</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light">#</span>
+                                <input type="number" class="form-control" name="session_number" id="sessionNumInput" required min="1">
+                            </div>
+                            <div class="form-text text-muted small">
+                                Pre-filled with the next available number. You can edit this manually if needed.
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Session Zip File</label>
+                            <input type="file" name="file" class="form-control" accept=".zip" required>
+                            <div class="form-text">Upload the raw .zip file from your recording device.</div>
+                        </div>
+
+                        <div class="d-none mb-3" id="progressWrapper">
+                            <div class="progress" style="height: 25px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar">0%</div>
+                            </div>
+                            <div id="statusMessage" class="text-center small mt-1 text-muted">Uploading...</div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                                <span id="btnText">Upload & Process</span>
+                                <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            </button>
+                        </div>
+                    </form>
+
+                </div>
             </div>
-
-            <div class="mb-3">
-                <label class="form-label">Session Zip File</label>
-                <input type="file" name="file" class="form-control" accept=".zip" required>
-            </div>
-
-            <div class="progress mb-3 d-none" id="progressWrapper">
-                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar">0%</div>
-            </div>
-
-            <div id="statusMessage" class="mb-3"></div>
-
-            <button type="submit" class="btn btn-primary w-100" id="uploadBtn">Upload & Process</button>
-        </form>
+        </div>
     </div>
 </div>
 
 <script>
-document.getElementById('uploadForm').addEventListener('submit', function() {
-    var btn = document.getElementById('uploadBtn');
-    var text = document.getElementById('btnText');
-    var spinner = document.getElementById('btnSpinner');
-    
-    // Prevent double-submit
-    if (btn.classList.contains('disabled')) return;
-        
-        btn.classList.add('disabled');
-        text.textContent = "Uploading...";
-        spinner.classList.remove('d-none');
-    });
-    
-document.getElementById('uploadForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    var formData = new FormData(this);
-    var xhr = new XMLHttpRequest();
-    var progressBar = document.getElementById('progressBar');
-    var progressWrapper = document.getElementById('progressWrapper');
-    var statusMessage = document.getElementById('statusMessage');
-    var btn = document.getElementById('uploadBtn');
+    // --- 1. Dynamic Session Number Logic ---
+    // Pull the data passed from Flask into a JS object
+    const nextNumbers = {{ next_numbers | tojson }};
+    const campaignSelect = document.getElementById('campaignSelect');
+    const sessionInput = document.getElementById('sessionNumInput');
 
-    // Reset UI
-    progressWrapper.classList.remove('d-none');
-    statusMessage.innerHTML = '';
-    statusMessage.className = 'mb-3';
-    btn.disabled = true;
-
-    xhr.upload.addEventListener('progress', function(e) {
-        if (e.lengthComputable) {
-            var percent = Math.round((e.loaded / e.total) * 100);
-            progressBar.style.width = percent + '%';
-            progressBar.innerHTML = percent + '%';
+    function updateSessionNumber() {
+        const campId = campaignSelect.value;
+        // If a campaign is selected and we have a number for it, use it.
+        // Otherwise default to 1.
+        if (campId && nextNumbers[campId]) {
+            sessionInput.value = nextNumbers[campId];
+        } else if (!sessionInput.value) {
+            sessionInput.value = 1;
         }
-    });
+    }
 
-    xhr.addEventListener('load', function() {
-        if (xhr.status === 200) {
-            var response = JSON.parse(xhr.responseText);
-            progressBar.classList.add('bg-success');
-            statusMessage.innerHTML = 'Upload Complete! Redirecting...';
-            statusMessage.className = 'mb-3 text-success';
-            setTimeout(function() {
-                window.location.href = response.redirect;
-            }, 1000);
-        } else {
-            var response = JSON.parse(xhr.responseText);
+    // Listen for campaign changes
+    campaignSelect.addEventListener('change', updateSessionNumber);
+
+    // Run once on load to handle the "Default Campaign" selection
+    document.addEventListener('DOMContentLoaded', updateSessionNumber);
+
+
+    // --- 2. Upload Handling (AJAX) ---
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const btn = document.getElementById('uploadBtn');
+        const btnText = document.getElementById('btnText');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const progressBar = document.getElementById('progressBar');
+        const progressWrapper = document.getElementById('progressWrapper');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Reset UI State
+        btn.disabled = true;
+        btnText.textContent = "Uploading...";
+        btnSpinner.classList.remove('d-none');
+        progressWrapper.classList.remove('d-none');
+        progressBar.style.width = '0%';
+        progressBar.innerHTML = '0%';
+        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated'; // Reset colors
+        statusMessage.className = 'text-center small mt-1 text-muted';
+        statusMessage.textContent = 'Uploading...';
+
+        // Prepare Data
+        var formData = new FormData(this);
+        var xhr = new XMLHttpRequest();
+
+        // Track Progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                var percent = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percent + '%';
+                progressBar.innerHTML = percent + '%';
+            }
+        });
+
+        // Handle Completion
+        xhr.addEventListener('load', function() {
+            if (xhr.status === 200) {
+                // Success
+                var response = JSON.parse(xhr.responseText);
+                progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                progressBar.classList.add('bg-success');
+                statusMessage.textContent = 'Upload Complete! Redirecting...';
+                statusMessage.className = 'text-center small mt-1 text-success fw-bold';
+                
+                // Redirect after short delay
+                setTimeout(function() {
+                    window.location.href = response.redirect;
+                }, 1000);
+            } else {
+                // Error
+                var response = {};
+                try { response = JSON.parse(xhr.responseText); } catch(e) {}
+                
+                progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                progressBar.classList.add('bg-danger');
+                statusMessage.textContent = 'Error: ' + (response.error || 'Upload failed');
+                statusMessage.className = 'text-center small mt-1 text-danger fw-bold';
+                
+                // Reset Button
+                btn.disabled = false;
+                btnText.textContent = "Retry Upload";
+                btnSpinner.classList.add('d-none');
+            }
+        });
+
+        // Handle Network Errors
+        xhr.addEventListener('error', function() {
             progressBar.classList.add('bg-danger');
-            statusMessage.innerHTML = 'Error: ' + (response.error || 'Upload failed');
-            statusMessage.className = 'mb-3 text-danger';
+            statusMessage.textContent = 'Network Error';
+            statusMessage.className = 'text-center small mt-1 text-danger fw-bold';
             btn.disabled = false;
-        }
-    });
+            btnText.textContent = "Retry Upload";
+            btnSpinner.classList.add('d-none');
+        });
 
-    xhr.addEventListener('error', function() {
-        progressBar.classList.add('bg-danger');
-        statusMessage.innerHTML = 'Network Error';
-        statusMessage.className = 'mb-3 text-danger';
-        btn.disabled = false;
+        // Send
+        xhr.open('POST', '/upload', true);
+        xhr.send(formData);
     });
-
-    xhr.open('POST', '/upload', true);
-    xhr.send(formData);
-});
 </script>
 {% endblock %}

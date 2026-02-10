@@ -1,37 +1,51 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+    /* Custom hover effect for the non-default star */
+    .hover-opacity-100:hover {
+        opacity: 1 !important;
+        cursor: pointer;
+    }
+</style>
+
 <h2>Campaigns</h2>
 
-<div class="card mb-4">
-    <div class="card-header">Create New Campaign</div>
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Create New Campaign</h5>
+    </div>
     <div class="card-body">
         <form method="POST">
             <div class="row">
-                <div class="col-md-6 mb-2">
-                    <label>Campaign Name</label>
-                    <input type="text" name="name" class="form-control" required>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold">Campaign Name</label>
+                    <input type="text" name="name" class="form-control" placeholder="e.g. My DnD Group" required>
                 </div>
-                <div class="col-md-6 mb-2">
-                    <label>Discord Webhook URL</label>
-                    <input type="text" name="discord_webhook" class="form-control">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold">Discord Webhook URL</label>
+                    <input type="text" name="discord_webhook" class="form-control" placeholder="https://discord.com/api/webhooks/...">
                 </div>
-                <div class="col-12 mb-2">
-                    <label>System Prompt</label>
-                    <textarea name="system_prompt" class="form-control" rows="4"></textarea>
+                <div class="col-12 mb-3">
+                    <label class="form-label fw-bold">System Prompt</label>
+                    <textarea name="system_prompt" class="form-control" rows="3" placeholder="Instructions for the AI summarizer..."></textarea>
                 </div>
-                <div class="col-12 mb-2">
-                    <label class="form-label">Custom Scripts (/data/scripts)</label>
-                    <div class="card">
+                <div class="col-12 mb-3">
+                    <label class="form-label fw-bold">Custom Scripts</label>
+                    <div class="card bg-light">
                         <div class="card-body p-2" style="max-height: 150px; overflow-y: auto;">
                             {% if available_scripts %}
+                                <div class="row">
                                 {% for script in available_scripts %}
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="scripts" value="{{ script }}" id="script_{{ loop.index }}">
-                                    <label class="form-check-label" for="script_{{ loop.index }}">
-                                        {{ script }}
-                                    </label>
-                                </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="scripts" value="{{ script }}" id="script_{{ loop.index }}">
+                                            <label class="form-check-label font-monospace small" for="script_{{ loop.index }}">
+                                                {{ script }}
+                                            </label>
+                                        </div>
+                                    </div>
                                 {% endfor %}
+                                </div>
                             {% else %}
                                 <div class="text-muted small fst-italic">
                                     No scripts found. Add files to <span class="font-monospace">/data/scripts/</span> to see them here.
@@ -41,35 +55,73 @@
                     </div>
                 </div>
             </div>
-            <button type="submit" class="btn btn-success mt-2">Create Campaign</button>
+            <div class="col-12 mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="is_default" id="createDefault">
+                    <label class="form-check-label" for="createDefault">
+                        Set as Default Campaign
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Create Campaign</button>
         </form>
     </div>
 </div>
 
 <h3>Existing Campaigns</h3>
-<table class="table table-striped">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Discord Hook</th>
-            <th>Scripts</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for campaign in campaigns %}
-        <tr>
-            <td>{{ campaign.name }}</td>
-            <td>{{ campaign.discord_webhook[:30] }}...</td>
-            <td>{{ campaign.script_paths }}</td>
-            <td>
-                <a href="/campaigns/edit/{{ campaign.id }}" class="btn btn-primary btn-sm">Edit</a>
-                <a href="/campaigns/delete/{{ campaign.id }}" class="btn btn-danger btn-sm" onclick="return confirm('Delete this campaign?')">Delete</a>
-            </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4">No campaigns found.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th class="text-center" style="width: 80px;">Default</th> <th>Name</th>
+                <th>Discord Hook</th>
+                <th>Scripts</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for campaign in campaigns %}
+            <tr>
+                <td class="text-center">
+                    {% if campaign.is_default %}
+                        ✅
+                    {% else %}
+                        <a href="{{ url_for('set_default_campaign', campaign_id=campaign.id) }}" 
+                           class="text-muted opacity-25 hover-opacity-100" 
+                           title="Set as Default">
+                            <i class="bi bi-star-fill fs-4"></i>
+                        </a>
+                    {% endif %}
+                </td>
+                
+                <td class="fw-bold">{{ campaign.name }}</td>
+                
+                <td>
+                    {% if campaign.discord_webhook %}
+                        <span class="badge bg-secondary" title="{{ campaign.discord_webhook }}">Configured</span>
+                    {% else %}
+                        <span class="text-muted small fst-italic">None</span>
+                    {% endif %}
+                </td>
+                
+                <td>
+                    {% if campaign.script_paths %}
+                        <small class="font-monospace text-muted">{{ campaign.script_paths }}</small>
+                    {% else %}
+                        <span class="text-muted small">-</span>
+                    {% endif %}
+                </td>
+                
+                <td class="text-end">
+                    <a href="/campaigns/edit/{{ campaign.id }}" class="btn btn-outline-primary btn-sm me-1">Edit</a>
+                    <a href="/campaigns/delete/{{ campaign.id }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this campaign? Sessions associated with it may break.')">Delete</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center py-4 text-muted">No campaigns found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}
