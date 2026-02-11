@@ -6,6 +6,7 @@ from datetime import datetime
 from faster_whisper import WhisperModel
 from database import db
 from models import Session, Job, Transcript
+from sqlalchemy import text
 
 # --- Custom Log Handler ---
 class DBLogHandler(logging.Handler):
@@ -49,21 +50,14 @@ def run_transcription(job, config, app):
     
     target_user = getattr(job, 'target_user', None)
     
-    # 2. Configure Environment (HF_TOKEN)
+    # 2. Configure Environment
     hf_token = config.get('hf_token')
-    if hf_token:
-        os.environ["HF_TOKEN"] = hf_token
-        job.logs += "\nHF_TOKEN set in environment."
-    else:
-        job.logs += "\nWARNING: No HF_TOKEN found in config. Rate limits may apply."
+    if hf_token: os.environ["HF_TOKEN"] = hf_token
     
     # 3. Initialize Whisper
     device = config.get('device', 'cuda')
     compute_type = config.get('whisper_compute_type', 'int8')
     model_size = config.get('whisper_model', 'small')
-    
-    job.logs += f"\nConfiguration: Model='{model_size}', Device='{device}', Compute='{compute_type}'"
-    db.session.commit()
     
     try:
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
@@ -75,7 +69,7 @@ def run_transcription(job, config, app):
     # 4. Find FLAC files
     flac_files = glob.glob(os.path.join(session.directory_path, "*.flac"))
     if not flac_files:
-        raise Exception("No .flac files found in session directory.")
+        raise Exception("No .flac files found.")
     
     job.logs += f"\nFound {len(flac_files)} files to transcribe."
     db.session.commit()
@@ -93,7 +87,6 @@ def run_transcription(job, config, app):
         if target_user and username != target_user:
             continue
         
-        # Log Start with Timestamp (Crucial for Metrics Parser)
         timestamp = datetime.now().strftime('%H:%M:%S')
         job.logs += f"\n[{timestamp}] Transcribing: {filename} (User: {username})"
         db.session.commit()
@@ -120,7 +113,6 @@ def run_transcription(job, config, app):
                     master_transcript.append((segment.start, line))
                     user_transcript_lines.append(line)
             
-            # --- FIX: Define the text variable before using it ---
             user_full_text = "\n".join(user_transcript_lines)
 
             # Save to Disk
@@ -144,7 +136,6 @@ def run_transcription(job, config, app):
                 )
                 db.session.add(new_transcript)
                 
-            # Log End with Timestamp (Crucial for Metrics Parser)
             timestamp = datetime.now().strftime('%H:%M:%S')
             job.logs += f"\n[{timestamp}] - Completed {filename}: {len(user_transcript_lines)} lines saved."
             db.session.commit()
@@ -166,8 +157,8 @@ def run_transcription(job, config, app):
         
     job.logs += f"\nMaster transcript saved to: {transcript_path}"
     
-    # Save Master Transcript to DB
     session.transcript_text = final_text
     db.session.commit()
     
     return True
+    

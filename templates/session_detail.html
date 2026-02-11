@@ -260,6 +260,7 @@
                         <div class="d-flex w-100 justify-content-between align-items-center me-3">
                             <span>
                                 <strong class="job-step-name">{{ job.step|title }}</strong>
+                                
                                 <span id="job-status-{{ job.id }}" class="badge ms-2 
                                     {% if job.status == 'completed' %}bg-success
                                     {% elif job.status == 'processing' %}bg-warning text-dark
@@ -268,7 +269,10 @@
                                     {{ job.status }}
                                 </span>
                             </span>
-                            <small id="job-time-{{ job.id }}" class="text-muted">{{ job.updated_at.strftime('%H:%M:%S') }}</small>
+                            
+                            <small id="job-time-{{ job.id }}" class="text-muted" title="Finished: {{ job.updated_at.strftime('%H:%M:%S') }}">
+                                <i class="bi bi-stopwatch"></i> {{ job_durations[job.id] }}
+                            </small>
                         </div>
                     </button>
                 </h2>
@@ -292,15 +296,14 @@
             <div class="card-body">
                 <div class="d-grid gap-2">
                     
-                    {% set folder_exists = folder_exists_check(recording_session.directory_path) %}
-                
+                    {% set folder_exists = folder_exists_check(recording_session.directory_path, recording_session.original_filename) %}
                     <a href="/session/{{ recording_session.id }}/action/retranscribe" 
                        class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
                        onclick="return confirm('Warning: Overwrite ALL transcripts?')">
                         <i class="bi bi-mic-fill"></i> Re-Transcribe Session (Full)
                     </a>
                     {% if not folder_exists %}
-                        <small class="text-danger text-center">Audio files not found in Input or Archive.</small>
+                        <small class="text-danger text-center">Zip file not in archive</small>
                     {% endif %}
 
                     <a href="/session/{{ recording_session.id }}/action/rebuild_transcript" 

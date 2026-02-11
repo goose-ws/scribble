@@ -40,7 +40,7 @@ COPY --chmod=775 models.py /app
 COPY --chmod=775 start.sh /app
 COPY --chmod=775 transcription_engine.py /app
 COPY --chmod=775 worker.py /app
-COPY --chmod=775 migrate_sessions.py /app
+COPY --chmod=775 migrate.py /app
 RUN mkdir /app/templates
 COPY templates /app/templates/
 

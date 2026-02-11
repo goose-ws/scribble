@@ -1,4 +1,3 @@
-# migrate_sessions.py
 import logging
 from sqlalchemy import text
 from app import app, db
@@ -62,8 +61,7 @@ def run_migration():
             sessions = Session.query.filter_by(campaign_id=camp.id).order_by(Session.session_date).all()
             
             for idx, session_obj in enumerate(sessions):
-                # Start at 1 (User can edit to 0 later if desired)
-                new_num = idx + 1
+                new_num = idx
                 if session_obj.session_number != new_num:
                     session_obj.session_number = new_num
                     logger.info(f"Updated: {camp.name} - {session_obj.original_filename} -> Session #{new_num}")

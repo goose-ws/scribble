@@ -19,7 +19,7 @@ class Campaign(db.Model):
 class Session(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     campaign_id = db.Column(db.Integer, db.ForeignKey('campaign.id'), nullable=False)
-    session_number = db.Column(db.Integer, default=1) 
+    session_number = db.Column(db.Integer, default=0) 
     session_date = db.Column(db.DateTime, nullable=False)
     local_time_str = db.Column(db.String(50), nullable=True)
     original_filename = db.Column(db.String(255), nullable=False)

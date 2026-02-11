@@ -37,24 +37,31 @@ init_db(app)
 @app.context_processor
 def utility_processor():
     """Inject smart path check into templates."""
-    def folder_exists_check(path):
+    # [CHANGE] Add filename argument with default None
+    def folder_exists_check(path, filename=None):
         # 1. Happy path: The original folder exists
         if os.path.exists(path):
             return True
             
         # 2. Fallback: Check if it was archived to /data/archive
-        # We assume the archive name matches the folder name + extension
         try:
             archive_dir = '/data/archive'
-            session_name = os.path.basename(path.rstrip('/')) # Handle potential trailing slashes
             
-            # Check for the specific pattern you verified: .flac.zip
-            if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")):
-                return True
+            # Check A: Does a file match the directory ID? (Old logic)
+            session_name = os.path.basename(path.rstrip('/'))
+            if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")): return True
+            if os.path.exists(os.path.join(archive_dir, session_name + ".zip")): return True
+
+            # [CHANGE] Check B: Does a file match the Original Filename?
+            if filename:
+                # Direct match
+                if os.path.exists(os.path.join(archive_dir, filename)): return True
                 
-            # Check for standard zip just in case
-            if os.path.exists(os.path.join(archive_dir, session_name + ".zip")):
-                return True
+                # Suffix match (Handles date prefixes like "2025-12-19_craig...")
+                if os.path.exists(archive_dir):
+                    for f in os.listdir(archive_dir):
+                        if f.endswith(filename):
+                            return True
                 
         except Exception:
             return False
@@ -704,7 +711,7 @@ def upload():
             
             # Calculate next number for this campaign
             max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=c.id).scalar()
-            next_numbers[c.id] = 1 if max_sess is None else max_sess + 1
+            next_numbers[c.id] = 0 if max_sess is None else max_sess + 1
 
         return render_template('upload.html', 
                                campaigns=campaigns, 
@@ -752,7 +759,7 @@ def upload():
             else:
                 # Fallback calculation
                 max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=campaign_id).scalar()
-                final_session_num = 1 if max_sess is None else max_sess + 1
+                final_session_num = 0 if max_sess is None else max_sess + 1
 
             # Create DB Records
             new_session = Session(
@@ -865,12 +872,28 @@ def api_metrics():
         'models': [{'name': m[0], 'count': m[1], 'latency': round(m[2] or 0, 2)} for m in model_stats]
     })
 
-# In session_detail
 @app.route('/session/<int:session_id>')
 @login_required
 def session_detail(session_id):
     session_obj = Session.query.get_or_404(session_id)
     jobs = Job.query.filter_by(session_id=session_obj.id).order_by(Job.created_at.asc()).all()
+
+    job_durations = {}
+    for job in jobs:
+        # 1. Completed/Error: Diff between Start and Finish
+        if job.status in ['completed', 'error'] and job.updated_at and job.created_at:
+            delta = job.updated_at - job.created_at
+        # 2. Processing: Diff between Start and NOW
+        elif job.status in ['processing', 'cancelling'] and job.created_at:
+            delta = datetime.utcnow() - job.created_at
+        # 3. Pending: Zero
+        else:
+            delta = timedelta(seconds=0)
+            
+        total_seconds = int(delta.total_seconds())
+        m, s = divmod(total_seconds, 60)
+        h, m = divmod(m, 60)
+        job_durations[job.id] = "{:02d}:{:02d}:{:02d}".format(h, m, s)
 
     # 1. Fetch Transcripts
     transcript_text = session_obj.transcript_text
@@ -884,12 +907,13 @@ def session_detail(session_id):
 
     # --- METRICS CALCULATIONS ---
     llm_stats = parse_llm_stats(session_obj.summary_text)
-    
-    # [FIX] This check must happen AFTER parse_llm_stats
-    if 'tokens' not in llm_stats:
-        llm_stats['tokens'] = None
+    if 'tokens' not in llm_stats: llm_stats['tokens'] = None
 
-    transcribe_job = next((j for j in jobs if j.step == 'transcribe'), None)
+    # Find the main transcription job to parse per-user audio durations
+    # We prefer the latest full 'transcribe' job if multiple exist
+    transcribe_jobs = [j for j in jobs if j.step == 'transcribe']
+    transcribe_job = transcribe_jobs[-1] if transcribe_jobs else None
+    
     user_metrics = {}
     if transcribe_job:
         user_metrics = parse_transcription_metrics(transcribe_job.logs, user_transcripts)
@@ -899,23 +923,23 @@ def session_detail(session_id):
     if summarize_job:
         integrations = parse_integrations_status(summarize_job.logs)
 
-    total_duration = "Pending..."
-    if session_obj.created_at:
-        start_time = session_obj.created_at
-
-        if session_obj.status == 'Completed':
-            last_job = Job.query.filter_by(session_id=session_obj.id).order_by(Job.updated_at.desc()).first()
-            if last_job:
-                delta = last_job.updated_at - start_time
-                total_duration = str(delta).split('.')[0] 
-        elif session_obj.status == 'Processing':
-            delta = datetime.utcnow() - start_time
-            total_duration = str(delta).split('.')[0] + " (Running)"
-        else:
-            if jobs:
-                last_job = jobs[-1]
-                delta = last_job.updated_at - start_time
-                total_duration = str(delta).split('.')[0]
+    # [CHANGED] Calculate Total Audio Duration (Sum of users)
+    # Old logic calculated wall-clock time from session creation to last job (Session Lifespan)
+    total_seconds = 0.0
+    for stats in user_metrics.values():
+        d_str = stats.get('duration', '0:00:00')
+        try:
+            # Parse "H:M:S" (e.g., "0:12:01" or "3:03:41")
+            parts = d_str.split(':')
+            if len(parts) == 3:
+                h, m, s = map(float, parts)
+                total_seconds += h*3600 + m*60 + s
+        except:
+            continue
+            
+    m, s = divmod(int(total_seconds), 60)
+    h, m = divmod(m, 60)
+    total_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s)
 
     total_words = 0
     if transcript_text:
@@ -925,6 +949,7 @@ def session_detail(session_id):
     return render_template('session_detail.html',
                          recording_session=session_obj,
                          jobs=jobs,
+                         job_durations=job_durations,
                          transcript=transcript_text,
                          user_transcripts=user_transcripts,
                          llm_stats=llm_stats,
@@ -1035,39 +1060,79 @@ def download_file(session_id, file_type):
 def session_action(session_id, action_type):
     session_obj = Session.query.get_or_404(session_id)
     
-    # Helper to restore archive if needed
-    def ensure_files_exist():
+    # --- Helper: Smart Restore ---
+    def ensure_files_exist(target_user=None):
+        logging.info(f"Checking files for Session {session_id} (User: {target_user})...")
+        
+        # 1. Check if FLACs already exist on disk
         if os.path.exists(session_obj.directory_path):
-            if any(f.endswith('.flac') for f in os.listdir(session_obj.directory_path)):
+            flacs = [f for f in os.listdir(session_obj.directory_path) if f.endswith('.flac')]
+            
+            # If we need a specific user, check if THEIR file is there
+            if target_user:
+                if any(target_user in f for f in flacs):
+                    logging.info("Target user file found on disk.")
+                    return True
+            # If we need the full session, check if ANY file is there (imperfect, but fast)
+            elif flacs:
+                logging.info("Session files found on disk.")
                 return True
         
-        archive_path = os.path.join('/data/archive', session_obj.original_filename)
+        # 2. Locate Archive
+        archive_dir = '/data/archive'
+        archive_path = os.path.join(archive_dir, session_obj.original_filename)
+        
+        # Handle the timestamp-prefixed filenames (e.g., 2026-02-10_filename.zip)
         if not os.path.exists(archive_path):
-            for f in os.listdir('/data/archive'):
+             for f in os.listdir(archive_dir):
                 if f.endswith(session_obj.original_filename):
-                    archive_path = os.path.join('/data/archive', f)
+                    archive_path = os.path.join(archive_dir, f)
+                    logging.info(f"Found archive match: {archive_path}")
                     break
         
         if os.path.exists(archive_path):
             try:
                 os.makedirs(session_obj.directory_path, exist_ok=True)
                 with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                    zip_ref.extractall(session_obj.directory_path)
+                    # Smart Extract: Only extract what is needed
+                    if target_user:
+                        # Scan zip for the file matching this user
+                        found_in_zip = False
+                        for name in zip_ref.namelist():
+                            if target_user in name and name.endswith('.flac'):
+                                logging.info(f"Extracting single file: {name}")
+                                zip_ref.extract(name, session_obj.directory_path)
+                                found_in_zip = True
+                                break
+                        if not found_in_zip:
+                            logging.warning(f"User {target_user} not found in zip. Extracting all.")
+                            zip_ref.extractall(session_obj.directory_path)
+                    else:
+                        logging.info("Extracting full session.")
+                        zip_ref.extractall(session_obj.directory_path)
                 return True
             except Exception as e:
+                logging.error(f"Archive restoration failed: {e}")
                 flash(f"Error restoring from archive: {e}", "danger")
                 return False
+        
+        logging.error(f"Archive not found for: {session_obj.original_filename}")
         return False
+
+    # --- Action Logic ---
 
     # 1. Force Re-Transcribe (All or Single)
     if action_type == 'retranscribe' or action_type.startswith('retranscribe_user_'):
-        if not ensure_files_exist():
-            flash('Error: Source files not found in /data/input or /data/archive.', 'danger')
-            return redirect(url_for('session_detail', session_id=session_obj.id))
-            
+        
         target_user = None
         if action_type.startswith('retranscribe_user_'):
             target_user = action_type.split('retranscribe_user_', 1)[1]
+            
+        if not ensure_files_exist(target_user):
+            flash('Error: Source files not found in /data/input or /data/archive.', 'danger')
+            return redirect(url_for('session_detail', session_id=session_obj.id))
+            
+        if target_user:
             step_name = f"transcribe:{target_user}"
             flash(f'Re-transcription queued for user: {target_user}', 'success')
         else:
@@ -1084,7 +1149,6 @@ def session_action(session_id, action_type):
         try:
             transcripts = Transcript.query.filter_by(session_id=session_obj.id).all()
             all_lines = []
-            
             ts_pattern = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
             
             for t in transcripts:
@@ -1124,7 +1188,6 @@ def session_action(session_id, action_type):
 
     # 4. Re-Generate Summary (LLM Only)
     elif action_type == 'regenerate_summary':
-        # [FIXED] Changed 'session' to 'session_obj'
         transcript_path = os.path.join(session_obj.directory_path, "session_transcript.txt")
         if not os.path.exists(transcript_path) and not session_obj.transcript_text:
              flash('Error: No transcript found.', 'danger')
@@ -1139,7 +1202,6 @@ def session_action(session_id, action_type):
 
     # 5. Post to Discord (Discord Only)
     elif action_type == 'post_discord':
-        # [FIXED] Changed 'session' to 'session_obj'
         if not session_obj.summary_text:
              flash('Error: No summary available to post.', 'danger')
              return redirect(url_for('session_detail', session_id=session_obj.id))

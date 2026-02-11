@@ -5,6 +5,7 @@ import base64
 import requests
 import logging
 import pytz
+import re
 from datetime import datetime
 from database import db
 from models import LLMLog, DiscordLog, Session
@@ -32,6 +33,24 @@ def calculate_cost(prompt_tokens, completion_tokens, config):
     except Exception as e:
         logging.error(f"Cost Calculation Error: {e}")
         return 0.0
+
+def clean_markdown(text):
+    """Enforces House Style on the recap markdown."""
+    DIVIDER = "~~          ~~"
+
+    # 1. Normalize Headings: Replace ####+ with ###
+    # (Matches 4 or more '#' at the start of a line and replaces with '### ')
+    text = re.sub(r'^#{4,}\s*', '### ', text, flags=re.MULTILINE)
+
+    # 2. Replace '***' horizontal rules with custom ASCII divider
+    # (Matches lines that contain ONLY '***', ignoring whitespace)
+    text = re.sub(r'^\s*\*\*\*\s*$', DIVIDER, text, flags=re.MULTILINE)
+
+    # 3. Enforce spacing (Blank line above and below)
+    # (Collapses any whitespace around the divider into exactly 2 newlines)
+    text = re.sub(r'\s*' + re.escape(DIVIDER) + r'\s*', f'\n\n{DIVIDER}\n\n', text)
+    
+    return text.strip()
 
 def format_duration(seconds):
     """Formats seconds to matching bash style (e.g. 12.345s)"""
@@ -489,7 +508,11 @@ def run_summary(job, config, post_to_discord_enabled=True):
             f"🧾 Tokens: `{tokens['prompt']} in | {tokens['completion']} out | {tokens['total']} total`\n\n"
         )
         
-        final_content = header + summary
+        # Combine Header + Summary
+        raw_content = header + summary
+        
+        # [CHANGE] Apply Cleanup Function
+        final_content = clean_markdown(raw_content)
 
         # 4. Save to Disk
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
