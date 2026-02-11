@@ -12,8 +12,9 @@ RUN apt-get install -y \
     git \
     curl \
     tzdata \
+    procps \
     jq \
-    procps
+    build-essential
 
 # Clean up
 RUN rm -rf /var/lib/apt/lists/*

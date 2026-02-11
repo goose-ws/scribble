@@ -25,9 +25,16 @@
                     <label class="form-label fw-bold">Discord Webhook URL</label>
                     <input type="text" name="discord_webhook" class="form-control" placeholder="https://discord.com/api/webhooks/...">
                 </div>
-                <div class="col-12 mb-3">
-                    <label class="form-label fw-bold">System Prompt</label>
-                    <textarea name="system_prompt" class="form-control" rows="3" placeholder="Instructions for the AI summarizer..."></textarea>
+                <div class="mb-3">
+                    <label for="system_prompt" class="form-label">System Prompt</label>
+                    <textarea class="form-control" id="system_prompt" name="system_prompt" rows="5"></textarea>
+                    <div class="form-text text-muted">
+                        Available variables: 
+                        <code class="text-primary">${campaignName}</code>, 
+                        <code class="text-primary">${sessionNumber}</code>, 
+                        <code class="text-primary">${sessionDate}</code>.
+                    </div>
+                    <div class="form-text">This prompt instructs the LLM on how to summarize the transcript.</div>
                 </div>
                 <div class="col-12 mb-3">
                     <label class="form-label fw-bold">Custom Scripts</label>
@@ -114,6 +121,7 @@
                 </td>
                 
                 <td class="text-end">
+                    <a href="{{ url_for('campaign_detail', campaign_id=campaign.id) }}" class="btn btn-outline-info btn-sm me-1">View</a>
                     <a href="/campaigns/edit/{{ campaign.id }}" class="btn btn-outline-primary btn-sm me-1">Edit</a>
                     <a href="/campaigns/delete/{{ campaign.id }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this campaign? Sessions associated with it may break.')">Delete</a>
                 </td>

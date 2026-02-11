@@ -6,6 +6,7 @@ import pytz
 import re
 import requests
 import time
+import markdown
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.utils import secure_filename
@@ -13,8 +14,10 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from sqlalchemy import func, case
 from config import load_config, save_config
 from database import init_db, db
-from models import Campaign, Session, Job, Transcript, LLMLog
+from models import Campaign, Session, Job, Transcript, LLMLog, DiscordLog
 from worker import JobManager
+from io import BytesIO
+from xhtml2pdf import pisa
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -469,7 +472,221 @@ def parse_session_date(info_path):
         logging.error(f"Timezone conversion error: {e}")
         return utc_date, str(utc_date)
 
-# app.py
+# --- CAMPAIGN ROUTES ---
+
+@app.route('/campaigns/<int:campaign_id>')
+@login_required
+def campaign_detail(campaign_id):
+    campaign = Campaign.query.get_or_404(campaign_id)
+    sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.desc(), Session.created_at.desc()).all()
+    
+    total_words = 0
+    total_in = 0
+    total_out = 0
+    total_combined = 0
+    total_cost = 0.0
+    discord_count = 0
+    discord_errors = 0
+    
+    # Get all logs linked to these sessions
+    session_ids = [s.id for s in sessions]
+    if session_ids:
+        logs = DiscordLog.query.filter(DiscordLog.session_id.in_(session_ids)).all()
+        discord_count = len(logs)
+        # Count non-success statuses (200, 201, 204 are good)
+        discord_errors = sum(1 for log in logs if log.http_status not in [200, 201, 204])
+    
+    for s in sessions:
+        # Words (Approximation from transcript)
+        if s.transcript_text:
+            total_words += len(s.transcript_text.split())
+            
+        # Tokens
+        # Format usually: "54,452 in | 2,188 out | 56,640 total"
+        stats = parse_llm_stats(s.summary_text)
+        token_str = stats.get('tokens', '')
+        
+        if token_str:
+            # 1. Try to parse full breakdown
+            match = re.search(r'([\d,]+)\s+in\s*\|\s*([\d,]+)\s+out\s*\|\s*([\d,]+)\s+total', token_str)
+            if match:
+                try:
+                    i = int(match.group(1).replace(',', ''))
+                    o = int(match.group(2).replace(',', ''))
+                    t = int(match.group(3).replace(',', ''))
+                    
+                    total_in += i
+                    total_out += o
+                    total_combined += t
+                except: pass
+            else:
+                # 2. Fallback: Try to find just "X total"
+                match_total = re.search(r'([\d,]+)\s+total', token_str)
+                if match_total:
+                    try:
+                        t = int(match_total.group(1).replace(',', ''))
+                        total_combined += t
+                    except: pass
+                else:
+                    # 3. Fallback: Try raw number
+                    try:
+                        t = int(token_str.replace(',', ''))
+                        total_combined += t
+                    except: pass
+
+    return render_template('campaign_detail.html', 
+                           campaign=campaign, 
+                           sessions=sessions,
+                           total_words="{:,}".format(total_words),
+                           total_in="{:,}".format(total_in),
+                           total_out="{:,}".format(total_out),
+                           total_combined="{:,}".format(total_combined),
+                           total_cost="{:,.4f}".format(total_cost),
+                           discord_count=discord_count,
+                           discord_errors=discord_errors)
+
+# In app.py
+
+@app.route('/campaigns/<int:campaign_id>/download_pdf/<doc_type>')
+@login_required
+def download_campaign_pdf(campaign_id, doc_type):
+    campaign = Campaign.query.get_or_404(campaign_id)
+    sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.asc()).all()
+    
+    # CSS for the PDF
+    html_content = f"""
+    <html>
+    <head>
+        <style>
+            @page {{ size: A4; margin: 2cm; }}
+            body {{ font-family: Helvetica, sans-serif; font-size: 10pt; line-height: 1.4; }}
+            h1 {{ color: #2c3e50; text-align: center; font-size: 24pt; margin-bottom: 20px; }}
+            h2 {{ color: #2980b9; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 30px; page-break-after: avoid; }}
+            .meta {{ color: #95a5a6; font-size: 9pt; font-style: italic; margin-bottom: 10px; }}
+            .toc-entry {{ margin-bottom: 5px; font-size: 11pt; }}
+            .toc-entry a {{ text-decoration: none; color: #2c3e50; }}
+            .page-break {{ page-break-before: always; }}
+            
+            /* Transcript specific styles */
+            .dialogue-line {{ margin-bottom: 8px; text-align: left; }}
+            .speaker {{ font-weight: bold; color: #444; }}
+            
+            /* Recap specific styles */
+            .recap-content {{ text-align: justify; }}
+        </style>
+    </head>
+    <body>
+    """
+    
+    # Title Page
+    title_text = "Campaign Recap" if doc_type == 'recap' else "Campaign Transcripts"
+    html_content += f"""
+        <div style="text-align: center; margin-top: 200px;">
+            <h1>{campaign.name}</h1>
+            <h2>{title_text}</h2>
+            <p>Generated on {datetime.now().strftime('%Y-%m-%d')}</p>
+        </div>
+        <div class="page-break"></div>
+    """
+    
+    # Table of Contents
+    html_content += "<h1>Table of Contents</h1>"
+    for s in sessions:
+        if doc_type == 'recap' and not s.summary_text: continue
+        if doc_type == 'transcript' and not s.transcript_text: continue
+        
+        entry_title = f"Session {s.session_number}: {s.session_date.strftime('%Y-%m-%d')}"
+        html_content += f"""
+        <div class='toc-entry'>
+            <a href='#session_{s.id}'>{entry_title}</a>
+        </div>
+        """
+        
+    html_content += "<div class='page-break'></div>"
+    
+    # Content Loop
+    for s in sessions:
+        date_str = s.session_date.strftime('%B %d, %Y')
+        anchor = f'<a name="session_{s.id}"></a>' 
+        
+        if doc_type == 'recap':
+            if not s.summary_text: continue
+            
+            # Markdown processing
+            clean_summary = ""
+            lines = s.summary_text.split('\n')
+            header_ended = False
+            content_lines = []
+            for line in lines:
+                if '##' in line and not header_ended: header_ended = True
+                if header_ended: content_lines.append(line)
+                elif not any(c in line for c in ['🤖', '📋', '⌚', '🧾']):
+                     content_lines.append(line)
+            
+            md_text = "\n".join(content_lines)
+            body_html = markdown.markdown(md_text)
+            
+            html_content += f"""
+                {anchor}
+                <h2>Session {s.session_number}</h2>
+                <div class="meta">{date_str}</div>
+                <div class="recap-content">{body_html}</div>
+                <div class="page-break"></div>
+            """
+            
+        elif doc_type == 'transcript':
+            if not s.transcript_text: continue
+            
+            html_content += f"""
+                {anchor}
+                <h2>Session {s.session_number}</h2>
+                <div class="meta">{date_str}</div>
+                <div class="transcript-content">
+            """
+            
+            raw_lines = s.transcript_text.split('\n')
+            
+            for line in raw_lines:
+                line = line.strip()
+                if not line: continue
+                
+                safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
+                
+                # FIXED LOGIC:
+                # 1. Find the closing bracket of the timestamp "]"
+                # 2. Find the first colon ":" AFTER that bracket
+                bracket_idx = safe_line.find(']')
+                sep_idx = safe_line.find(':', bracket_idx) if bracket_idx != -1 else -1
+
+                if bracket_idx != -1 and sep_idx != -1:
+                    # We found a timestamp and a speaker separator
+                    # safe_line[:sep_idx+1] includes the colon -> "[00:00:00] Speaker:"
+                    formatted_line = f"<span class='speaker'>{safe_line[:sep_idx+1]}</span>{safe_line[sep_idx+1:]}"
+                else:
+                    # No timestamp/speaker structure found, print as is
+                    formatted_line = safe_line
+
+                html_content += f"<div class='dialogue-line'>{formatted_line}</div>"
+            
+            html_content += "</div><div class='page-break'></div>"
+
+    html_content += "</body></html>"
+    
+    # Create PDF
+    pdf_output = BytesIO()
+    pisa_status = pisa.CreatePDF(html_content, dest=pdf_output)
+    
+    if pisa_status.err:
+        return f"Error generating PDF: {pisa_status.err}", 500
+        
+    pdf_output.seek(0)
+    filename = f"{campaign.name.replace(' ', '_')}_{doc_type}.pdf"
+    
+    return Response(
+        pdf_output,
+        mimetype='application/pdf',
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
 
 @app.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -914,7 +1131,7 @@ def session_action(session_id, action_type):
              return redirect(url_for('session_detail', session_id=session_obj.id))
 
         new_job = Job(session_id=session_obj.id, step='summarize_only', status='pending')
-        new_job.logs = "Queued for Summary Re-generation (No Discord)..."
+        new_job.logs = "Queued for Summary Re-generation"
         db.session.add(new_job)
         session_obj.status = "Processing"
         db.session.commit()

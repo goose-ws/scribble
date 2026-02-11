@@ -8,6 +8,7 @@ import pytz
 from datetime import datetime
 from database import db
 from models import LLMLog, DiscordLog, Session
+from string import Template
 
 # --- HELPER FUNCTIONS ---
 
@@ -37,10 +38,12 @@ def format_duration(seconds):
     return f"{seconds:.3f}s"
 
 def log_llm_request(provider, model, usage, timing, req_data, res_data, status, finish_reason, config):
+    # Default to full dump
     req_str = json.dumps(req_data)
     res_str = json.dumps(res_data)
     
     if config.get('db_space_saver'):
+        # 1. Truncate Request
         if 'contents' in req_data: # Gemini
             try:
                 for c in req_data['contents']:
@@ -48,6 +51,27 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
                         if 'inlineData' in p: p['inlineData']['data'] = "[TRUNCATED]"
                 req_str = json.dumps(req_data)
             except: pass
+
+        # 2. Truncate Response
+        try:
+            # Gemini responses can be a Dict or a List (if streaming chunks)
+            items = res_data if isinstance(res_data, list) else [res_data]
+            
+            data_modified = False
+            for item in items:
+                if 'candidates' in item:
+                    for cand in item['candidates']:
+                        if 'content' in cand and 'parts' in cand['content']:
+                            for part in cand['content']['parts']:
+                                # Check for "thought" field (Gemini 2.0 Thinking)
+                                if 'thought' in part:
+                                    part['thought'] = "[TRUNCATED]"
+                                    data_modified = True
+            
+            if data_modified:
+                res_str = json.dumps(res_data)
+        except Exception:
+            pass # Fail silently and log the full original if parsing fails
 
     log_entry = LLMLog(
         provider=provider,
@@ -310,8 +334,41 @@ def send_ollama(prompt, transcript_path, config):
     return full_text, stats
 
 # --- DISCORD LOGIC ---
+def send_discord_request(url, payload, session_id=None):
+    start_time = time.time()
+    try:
+        response = requests.post(url, json=payload)
+        duration = time.time() - start_time
+        
+        try:
+            res_json = response.json()
+        except:
+            res_json = {"body": response.text} # Handle non-JSON responses
+            
+        log = DiscordLog(
+            session_id=session_id,
+            message_id=str(res_json.get('id', '')),
+            channel_id=str(res_json.get('channel_id', '')),
+            content=payload.get('content', '')[:3000], # Store content (safe truncate)
+            duration_seconds=duration,
+            http_status=response.status_code,
+            request_json=json.dumps(payload),
+            response_json=json.dumps(res_json)
+        )
+        db.session.add(log)
+        db.session.commit()
+        
+        return response
+    except Exception as e:
+        logging.error(f"Discord Request Failed: {e}")
+        # Return a dummy failure response object if request crashed
+        class DummyResponse:
+            status_code = 500
+            text = str(e)
+            def json(self): return {}
+        return DummyResponse()
 
-def send_discord(summary_text, webhook_url, title_date):
+def send_discord(summary_text, webhook_url, title_date, session_id=None):
     if not webhook_url:
         return
         
@@ -323,14 +380,19 @@ def send_discord(summary_text, webhook_url, title_date):
         "thread_name": title
     }
     
-    res = requests.post(f"{webhook_url}?wait=true", json=start_payload)
+    # Use our new logging helper
+    res = send_discord_request(f"{webhook_url}?wait=true", start_payload, session_id)
     
     if res.status_code not in [200, 201, 204]:
         logging.error(f"Discord Thread Creation Failed: {res.text}")
+        # Fallback to main channel if thread creation fails
         thread_webhook = webhook_url
     else:
-        thread_id = res.json().get('id')
-        thread_webhook = f"{webhook_url}?thread_id={thread_id}"
+        try:
+            thread_id = res.json().get('id')
+            thread_webhook = f"{webhook_url}?thread_id={thread_id}"
+        except:
+            thread_webhook = webhook_url
 
     # 2. Chunk and Send
     paragraphs = summary_text.split('\n\n')
@@ -341,10 +403,10 @@ def send_discord(summary_text, webhook_url, title_date):
         if len(p) > 1900:
             chunks = [p[i:i+1900] for i in range(0, len(p), 1900)]
             for chunk in chunks:
-                requests.post(thread_webhook, json={"content": chunk})
+                send_discord_request(thread_webhook, {"content": chunk}, session_id)
                 time.sleep(0.5)
         else:
-            requests.post(thread_webhook, json={"content": p})
+            send_discord_request(thread_webhook, {"content": p}, session_id)
             time.sleep(1)
 
 # --- MAIN ENGINE ENTRY ---
@@ -369,6 +431,27 @@ def run_summary(job, config, post_to_discord_enabled=True):
     if not prompt:
         prompt = "Summarize this DnD session."
         
+    # We use safe_substitute so it doesn't crash if the user makes a typo
+    # or if a variable is missing. It just leaves the ${var} string in place.
+    template = Template(prompt)
+    
+    # Calculate the variables
+    # Format date nicely: "February 10, 2026"
+    target_tz_str = os.environ.get('TZ', 'UTC')
+    try:
+        local_tz = pytz.timezone(target_tz_str)
+        utc_dt = session.session_date.replace(tzinfo=pytz.utc)
+        local_dt = utc_dt.astimezone(local_tz)
+        formatted_date = local_dt.strftime("%B %-d, %Y")
+    except Exception:
+        formatted_date = session.session_date.strftime("%B %d, %Y")
+
+    prompt = template.safe_substitute(
+        campaignName=session.campaign.name,
+        sessionNumber=session.session_number,
+        sessionDate=formatted_date
+    )
+    
     provider = config.get('llm_provider', 'Google')
     job.logs += f"\nStarting Summary with {provider}..."
     
@@ -422,7 +505,7 @@ def run_summary(job, config, post_to_discord_enabled=True):
         if post_to_discord_enabled:
             if session.campaign.discord_webhook:
                 job.logs += "\nSending to Discord..."
-                send_discord(final_content, session.campaign.discord_webhook, formatted_date)
+                send_discord(final_content, session.campaign.discord_webhook, formatted_date, session.id)
                 job.logs += " Sent."
             else:
                 job.logs += "\nDiscord Webhook not configured. Skipping."
@@ -451,5 +534,5 @@ def run_discord_post(job, config):
     formatted_date = session.session_date.strftime("%B %-d, %Y")
     
     job.logs += f"\nPosting existing summary to Discord..."
-    send_discord(session.summary_text, session.campaign.discord_webhook, formatted_date)
+    send_discord(session.summary_text, session.campaign.discord_webhook, formatted_date, session.id)
     job.logs += " Sent."

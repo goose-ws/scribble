@@ -18,9 +18,15 @@
                     <input type="text" name="discord_webhook" class="form-control" value="{{ campaign.discord_webhook or '' }}">
                 </div>
                 
-                <div class="col-12 mb-3">
-                    <label class="form-label">System Prompt</label>
-                    <textarea name="system_prompt" class="form-control" rows="14">{{ campaign.system_prompt or '' }}</textarea>
+                <div class="mb-3">
+                    <label for="system_prompt" class="form-label">System Prompt</label>
+                    <textarea class="form-control" id="system_prompt" name="system_prompt" rows="14">{{ campaign.system_prompt or '' }}</textarea>
+                    <div class="form-text text-muted">
+                        Available variables: 
+                        <code class="text-primary">${campaignName}</code>, 
+                        <code class="text-primary">${sessionNumber}</code>, 
+                        <code class="text-primary">${sessionDate}</code>.
+                    </div>
                     <div class="form-text">This prompt instructs the LLM on how to summarize the transcript.</div>
                 </div>
                 

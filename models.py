@@ -68,6 +68,7 @@ class LLMLog(db.Model):
 
 class DiscordLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('session.id'), nullable=True)
     message_id = db.Column(db.String(100))
     channel_id = db.Column(db.String(100))
     content = db.Column(LargeText())
