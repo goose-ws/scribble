@@ -26,7 +26,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.2.0'
+APP_VERSION = '4.2.1'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
