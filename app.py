@@ -26,7 +26,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.1.5'
+APP_VERSION = '4.1.6'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -42,11 +42,11 @@ def utility_processor():
         # 1. Happy path: The original folder exists
         if os.path.exists(path):
             return True
-            
+
         # 2. Fallback: Check if it was archived to /data/archive
         try:
             archive_dir = '/data/archive'
-            
+
             # Check A: Does a file match the directory ID? (Old logic)
             session_name = os.path.basename(path.rstrip('/'))
             if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")): return True
@@ -56,18 +56,18 @@ def utility_processor():
             if filename:
                 # Direct match
                 if os.path.exists(os.path.join(archive_dir, filename)): return True
-                
+
                 # Suffix match (Handles date prefixes like "2025-12-19_craig...")
                 if os.path.exists(archive_dir):
                     for f in os.listdir(archive_dir):
                         if f.endswith(filename):
                             return True
-                
+
         except Exception:
             return False
-            
+
         return False
-    
+
     return dict(folder_exists_check=folder_exists_check)
 
 # --- AUTH DECORATOR ---
@@ -94,7 +94,7 @@ CHECK_INTERVAL = 3600  # Check once per hour
 def get_remote_version():
     """Fetches the APP_VERSION string from the main GitHub repo."""
     global LATEST_VERSION_CACHE, LAST_CHECK_TIME
-    
+
     # Return cached version if valid
     if LATEST_VERSION_CACHE and (time.time() - LAST_CHECK_TIME < CHECK_INTERVAL):
         return LATEST_VERSION_CACHE
@@ -103,7 +103,7 @@ def get_remote_version():
         url = 'https://raw.githubusercontent.com/goose-ws/scribble/refs/heads/main/app.py'
         # Set a short timeout so we don't hang the page if GitHub is slow
         resp = requests.get(url, timeout=3)
-        
+
         if resp.status_code == 200:
             # Regex to find: APP_VERSION = 'x.x.x'
             match = re.search(r"APP_VERSION\s*=\s*['\"]([\d\.]+)['\"]", resp.text)
@@ -113,7 +113,7 @@ def get_remote_version():
                 return LATEST_VERSION_CACHE
     except Exception:
         pass # Fail silently if offline or GitHub is down
-    
+
     return None
 
 @app.context_processor
@@ -121,12 +121,12 @@ def inject_update_status():
     """Makes 'update_available' and 'latest_version' variables available to all templates."""
     remote_ver = get_remote_version()
     is_update = False
-    
+
     # Simple check: If remote exists and doesn't match local
     # (We assume 'APP_VERSION' is defined globally in your app.py)
     if remote_ver and remote_ver != APP_VERSION:
         is_update = True
-        
+
     return dict(update_available=is_update, latest_version=remote_ver)
 
 def parse_llm_stats(summary_text):
@@ -306,7 +306,7 @@ def settings():
         # Handle Script Selection
         selected_scripts = request.form.getlist('scripts')
         script_paths_str = ",".join(selected_scripts)
-        
+
         # [NEW] Handle Default Logic
         is_default = 'is_default' in request.form
         if is_default:
@@ -399,15 +399,15 @@ def edit_campaign(id):
         # Handle Script Selection
         selected_scripts = request.form.getlist('scripts')
         campaign.script_paths = ",".join(selected_scripts)
-        
+
         # [FIXED] Robust Default Logic
         should_be_default = 'is_default' in request.form
-        
+
         if should_be_default:
             # 1. Clear 'is_default' on ALL OTHER campaigns (exclude current ID)
             # This prevents the bulk update from interfering with our current object
             Campaign.query.filter(Campaign.id != campaign.id).update({Campaign.is_default: False})
-            
+
             # 2. Set this campaign to True
             campaign.is_default = True
         else:
@@ -433,11 +433,11 @@ def edit_campaign(id):
 def set_default_campaign(campaign_id):
     # 1. Unset all
     Campaign.query.update({Campaign.is_default: False})
-    
+
     # 2. Set new default
     camp = Campaign.query.get_or_404(campaign_id)
     camp.is_default = True
-    
+
     db.session.commit()
     flash(f'"{camp.name}" is now the default campaign.', 'success')
     return redirect(url_for('campaigns'))
@@ -486,7 +486,7 @@ def parse_session_date(info_path):
 def campaign_detail(campaign_id):
     campaign = Campaign.query.get_or_404(campaign_id)
     sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.desc(), Session.created_at.desc()).all()
-    
+
     total_words = 0
     total_in = 0
     total_out = 0
@@ -494,7 +494,7 @@ def campaign_detail(campaign_id):
     total_cost = 0.0
     discord_count = 0
     discord_errors = 0
-    
+
     # Get all logs linked to these sessions
     session_ids = [s.id for s in sessions]
     if session_ids:
@@ -502,17 +502,17 @@ def campaign_detail(campaign_id):
         discord_count = len(logs)
         # Count non-success statuses (200, 201, 204 are good)
         discord_errors = sum(1 for log in logs if log.http_status not in [200, 201, 204])
-    
+
     for s in sessions:
         # Words (Approximation from transcript)
         if s.transcript_text:
             total_words += len(s.transcript_text.split())
-            
+
         # Tokens
         # Format usually: "54,452 in | 2,188 out | 56,640 total"
         stats = parse_llm_stats(s.summary_text)
         token_str = stats.get('tokens', '')
-        
+
         if token_str:
             # 1. Try to parse full breakdown
             match = re.search(r'([\d,]+)\s+in\s*\|\s*([\d,]+)\s+out\s*\|\s*([\d,]+)\s+total', token_str)
@@ -521,7 +521,7 @@ def campaign_detail(campaign_id):
                     i = int(match.group(1).replace(',', ''))
                     o = int(match.group(2).replace(',', ''))
                     t = int(match.group(3).replace(',', ''))
-                    
+
                     total_in += i
                     total_out += o
                     total_combined += t
@@ -541,8 +541,8 @@ def campaign_detail(campaign_id):
                         total_combined += t
                     except: pass
 
-    return render_template('campaign_detail.html', 
-                           campaign=campaign, 
+    return render_template('campaign_detail.html',
+                           campaign=campaign,
                            sessions=sessions,
                            total_words="{:,}".format(total_words),
                            total_in="{:,}".format(total_in),
@@ -559,7 +559,7 @@ def campaign_detail(campaign_id):
 def download_campaign_pdf(campaign_id, doc_type):
     campaign = Campaign.query.get_or_404(campaign_id)
     sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.asc()).all()
-    
+
     # CSS for the PDF
     html_content = f"""
     <html>
@@ -573,18 +573,18 @@ def download_campaign_pdf(campaign_id, doc_type):
             .toc-entry {{ margin-bottom: 5px; font-size: 11pt; }}
             .toc-entry a {{ text-decoration: none; color: #2c3e50; }}
             .page-break {{ page-break-before: always; }}
-            
+
             /* Transcript specific styles */
             .dialogue-line {{ margin-bottom: 8px; text-align: left; }}
             .speaker {{ font-weight: bold; color: #444; }}
-            
+
             /* Recap specific styles */
             .recap-content {{ text-align: justify; }}
         </style>
     </head>
     <body>
     """
-    
+
     # Title Page
     title_text = "Campaign Recap" if doc_type == 'recap' else "Campaign Transcripts"
     html_content += f"""
@@ -595,30 +595,30 @@ def download_campaign_pdf(campaign_id, doc_type):
         </div>
         <div class="page-break"></div>
     """
-    
+
     # Table of Contents
     html_content += "<h1>Table of Contents</h1>"
     for s in sessions:
         if doc_type == 'recap' and not s.summary_text: continue
         if doc_type == 'transcript' and not s.transcript_text: continue
-        
+
         entry_title = f"Session {s.session_number}: {s.session_date.strftime('%Y-%m-%d')}"
         html_content += f"""
         <div class='toc-entry'>
             <a href='#session_{s.id}'>{entry_title}</a>
         </div>
         """
-        
+
     html_content += "<div class='page-break'></div>"
-    
+
     # Content Loop
     for s in sessions:
         date_str = s.session_date.strftime('%B %d, %Y')
-        anchor = f'<a name="session_{s.id}"></a>' 
-        
+        anchor = f'<a name="session_{s.id}"></a>'
+
         if doc_type == 'recap':
             if not s.summary_text: continue
-            
+
             # Markdown processing
             clean_summary = ""
             lines = s.summary_text.split('\n')
@@ -629,10 +629,10 @@ def download_campaign_pdf(campaign_id, doc_type):
                 if header_ended: content_lines.append(line)
                 elif not any(c in line for c in ['🤖', '📋', '⌚', '🧾']):
                      content_lines.append(line)
-            
+
             md_text = "\n".join(content_lines)
             body_html = markdown.markdown(md_text)
-            
+
             html_content += f"""
                 {anchor}
                 <h2>Session {s.session_number}</h2>
@@ -640,25 +640,25 @@ def download_campaign_pdf(campaign_id, doc_type):
                 <div class="recap-content">{body_html}</div>
                 <div class="page-break"></div>
             """
-            
+
         elif doc_type == 'transcript':
             if not s.transcript_text: continue
-            
+
             html_content += f"""
                 {anchor}
                 <h2>Session {s.session_number}</h2>
                 <div class="meta">{date_str}</div>
                 <div class="transcript-content">
             """
-            
+
             raw_lines = s.transcript_text.split('\n')
-            
+
             for line in raw_lines:
                 line = line.strip()
                 if not line: continue
-                
+
                 safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-                
+
                 # FIXED LOGIC:
                 # 1. Find the closing bracket of the timestamp "]"
                 # 2. Find the first colon ":" AFTER that bracket
@@ -674,21 +674,21 @@ def download_campaign_pdf(campaign_id, doc_type):
                     formatted_line = safe_line
 
                 html_content += f"<div class='dialogue-line'>{formatted_line}</div>"
-            
+
             html_content += "</div><div class='page-break'></div>"
 
     html_content += "</body></html>"
-    
+
     # Create PDF
     pdf_output = BytesIO()
     pisa_status = pisa.CreatePDF(html_content, dest=pdf_output)
-    
+
     if pisa_status.err:
         return f"Error generating PDF: {pisa_status.err}", 500
-        
+
     pdf_output.seek(0)
     filename = f"{campaign.name.replace(' ', '_')}_{doc_type}.pdf"
-    
+
     return Response(
         pdf_output,
         mimetype='application/pdf',
@@ -700,7 +700,7 @@ def download_campaign_pdf(campaign_id, doc_type):
 def upload():
     if request.method == 'GET':
         campaigns = Campaign.query.all()
-        
+
         # Prepare Data for Frontend
         default_campaign_id = None
         next_numbers = {}
@@ -708,13 +708,13 @@ def upload():
         for c in campaigns:
             if c.is_default:
                 default_campaign_id = c.id
-            
+
             # Calculate next number for this campaign
             max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=c.id).scalar()
             next_numbers[c.id] = 0 if max_sess is None else max_sess + 1
 
-        return render_template('upload.html', 
-                               campaigns=campaigns, 
+        return render_template('upload.html',
+                               campaigns=campaigns,
                                default_campaign_id=default_campaign_id,
                                next_numbers=next_numbers)
 
@@ -743,7 +743,7 @@ def upload():
 
         try:
             file.save(zip_path)
-            
+
             # ... [Keep your existing ZIP validation code here] ...
             if not zipfile.is_zipfile(zip_path): raise Exception("Not a zip.")
             with zipfile.ZipFile(zip_path, 'r') as z: z.extractall(upload_dir)
@@ -771,11 +771,11 @@ def upload():
                 directory_path=upload_dir,
                 status="Processing"
             )
-            
+
             # ... [Keep existing Job creation and return] ...
             db.session.add(new_session)
             db.session.commit()
-            
+
             initial_job = Job(session_id=new_session.id, step="transcribe", status="pending", logs="Job queued.")
             db.session.add(initial_job)
             db.session.commit()
@@ -798,7 +798,7 @@ def update_session_number(session_id):
         flash(f"Session number updated to {new_num}", "success")
     except ValueError:
         flash("Invalid number provided.", "error")
-    
+
     return redirect(url_for('session_detail', session_id=session_id))
 
 @app.route('/api/metrics')
@@ -889,7 +889,7 @@ def session_detail(session_id):
         # 3. Pending: Zero
         else:
             delta = timedelta(seconds=0)
-            
+
         total_seconds = int(delta.total_seconds())
         m, s = divmod(total_seconds, 60)
         h, m = divmod(m, 60)
@@ -913,7 +913,7 @@ def session_detail(session_id):
     # We prefer the latest full 'transcribe' job if multiple exist
     transcribe_jobs = [j for j in jobs if j.step == 'transcribe']
     transcribe_job = transcribe_jobs[-1] if transcribe_jobs else None
-    
+
     user_metrics = {}
     if transcribe_job:
         user_metrics = parse_transcription_metrics(transcribe_job.logs, user_transcripts)
@@ -936,7 +936,7 @@ def session_detail(session_id):
                 total_seconds += h*3600 + m*60 + s
         except:
             continue
-            
+
     m, s = divmod(int(total_seconds), 60)
     h, m = divmod(m, 60)
     total_duration = "{:02d}:{:02d}:{:02d}".format(h, m, s)
@@ -964,12 +964,12 @@ def save_user_transcript(session_id):
     session_obj = Session.query.get_or_404(session_id)
     username = request.form.get('username')
     new_content = request.form.get('content')
-    
+
     transcript = Transcript.query.filter_by(session_id=session_id, username=username).first()
     if transcript:
         transcript.content = new_content
         db.session.commit()
-        
+
         # Update disk file
         try:
             user_path = os.path.join(session_obj.directory_path, "transcripts", f"{username}_transcript.txt")
@@ -977,11 +977,11 @@ def save_user_transcript(session_id):
                 f.write(new_content)
         except Exception as e:
             logging.error(f"Failed to save user transcript to disk: {e}")
-            
+
         flash(f'Transcript for {username} updated.', 'success')
     else:
         flash('User transcript not found.', 'error')
-        
+
     return redirect(url_for('session_detail', session_id=session_id))
 
 @app.route('/session/<int:session_id>/save_master_transcript', methods=['POST'])
@@ -989,10 +989,10 @@ def save_user_transcript(session_id):
 def save_master_transcript(session_id):
     session_obj = Session.query.get_or_404(session_id)
     new_content = request.form.get('content')
-    
+
     session_obj.transcript_text = new_content
     db.session.commit()
-    
+
     # Update disk file
     try:
         path = os.path.join(session_obj.directory_path, "session_transcript.txt")
@@ -1009,10 +1009,10 @@ def save_master_transcript(session_id):
 def save_recap(session_id):
     session_obj = Session.query.get_or_404(session_id)
     new_content = request.form.get('content')
-    
+
     session_obj.summary_text = new_content
     db.session.commit()
-    
+
     # Update disk file
     try:
         path = os.path.join(session_obj.directory_path, "session_recap.txt")
@@ -1028,7 +1028,7 @@ def save_recap(session_id):
 @login_required
 def download_file(session_id, file_type):
     session_obj = Session.query.get_or_404(session_id)
-    
+
     if file_type == 'recap':
         content = session_obj.summary_text
         filename = f"Recap_{session_obj.original_filename}.md"
@@ -1048,7 +1048,7 @@ def download_file(session_id, file_type):
             return "User transcript not found", 404
     else:
         return "Invalid file type", 400
-        
+
     return Response(
         content,
         mimetype=mimetype,
@@ -1059,15 +1059,15 @@ def download_file(session_id, file_type):
 @login_required
 def session_action(session_id, action_type):
     session_obj = Session.query.get_or_404(session_id)
-    
+
     # --- Helper: Smart Restore ---
     def ensure_files_exist(target_user=None):
         logging.info(f"Checking files for Session {session_id} (User: {target_user})...")
-        
+
         # 1. Check if FLACs already exist on disk
         if os.path.exists(session_obj.directory_path):
             flacs = [f for f in os.listdir(session_obj.directory_path) if f.endswith('.flac')]
-            
+
             # If we need a specific user, check if THEIR file is there
             if target_user:
                 if any(target_user in f for f in flacs):
@@ -1077,11 +1077,11 @@ def session_action(session_id, action_type):
             elif flacs:
                 logging.info("Session files found on disk.")
                 return True
-        
+
         # 2. Locate Archive
         archive_dir = '/data/archive'
         archive_path = os.path.join(archive_dir, session_obj.original_filename)
-        
+
         # Handle the timestamp-prefixed filenames (e.g., 2026-02-10_filename.zip)
         if not os.path.exists(archive_path):
              for f in os.listdir(archive_dir):
@@ -1089,7 +1089,7 @@ def session_action(session_id, action_type):
                     archive_path = os.path.join(archive_dir, f)
                     logging.info(f"Found archive match: {archive_path}")
                     break
-        
+
         if os.path.exists(archive_path):
             try:
                 os.makedirs(session_obj.directory_path, exist_ok=True)
@@ -1115,7 +1115,7 @@ def session_action(session_id, action_type):
                 logging.error(f"Archive restoration failed: {e}")
                 flash(f"Error restoring from archive: {e}", "danger")
                 return False
-        
+
         logging.error(f"Archive not found for: {session_obj.original_filename}")
         return False
 
@@ -1123,15 +1123,15 @@ def session_action(session_id, action_type):
 
     # 1. Force Re-Transcribe (All or Single)
     if action_type == 'retranscribe' or action_type.startswith('retranscribe_user_'):
-        
+
         target_user = None
         if action_type.startswith('retranscribe_user_'):
             target_user = action_type.split('retranscribe_user_', 1)[1]
-            
+
         if not ensure_files_exist(target_user):
             flash('Error: Source files not found in /data/input or /data/archive.', 'danger')
             return redirect(url_for('session_detail', session_id=session_obj.id))
-            
+
         if target_user:
             step_name = f"transcribe:{target_user}"
             flash(f'Re-transcription queued for user: {target_user}', 'success')
@@ -1150,7 +1150,7 @@ def session_action(session_id, action_type):
             transcripts = Transcript.query.filter_by(session_id=session_obj.id).all()
             all_lines = []
             ts_pattern = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
-            
+
             for t in transcripts:
                 if not t.content: continue
                 for line in t.content.split('\n'):
@@ -1162,19 +1162,19 @@ def session_action(session_id, action_type):
                         all_lines.append((seconds, line))
                     else:
                         all_lines.append((999999, line))
-            
+
             all_lines.sort(key=lambda x: x[0])
             final_text = "\n".join([x[1] for x in all_lines])
-            
+
             session_obj.transcript_text = final_text
             db.session.commit()
-            
+
             path = os.path.join(session_obj.directory_path, "session_transcript.txt")
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(final_text)
-                
+
             flash('Master transcript rebuilt from user transcripts.', 'success')
-            
+
         except Exception as e:
             flash(f'Rebuild failed: {str(e)}', 'danger')
 
@@ -1205,7 +1205,7 @@ def session_action(session_id, action_type):
         if not session_obj.summary_text:
              flash('Error: No summary available to post.', 'danger')
              return redirect(url_for('session_detail', session_id=session_obj.id))
-             
+
         new_job = Job(session_id=session_obj.id, step='post_discord', status='pending')
         new_job.logs = "Queued for Discord Posting..."
         db.session.add(new_job)
