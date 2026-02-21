@@ -11,5 +11,5 @@ Flask-SQLAlchemy==3.1.1
 pytz==2025.2
 psycopg2-binary==2.9.11
 PyMySQL==1.1.2
-markdown==3.5.2
+markdown==3.10.2
 xhtml2pdf==0.2.15
