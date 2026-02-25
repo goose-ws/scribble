@@ -1,6 +1,6 @@
 Flask==3.1.2
 gunicorn==25.1.0
-SQLAlchemy==2.0.46
+SQLAlchemy==2.0.47
 faster-whisper==1.2.1
 Werkzeug==3.1.5
 bcrypt==5.0.0
