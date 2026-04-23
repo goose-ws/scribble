@@ -108,23 +108,91 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
     db.session.add(log_entry)
     db.session.commit()
 
+# --- RECAP CONTEXT BUILDER ---
+
+def build_recap_context_file(session, config):
+    """
+    Compiles previous session recaps for the same campaign into a single temp file.
+    Returns the file path (str), or None if the feature is disabled or no prior
+    recaps exist.
+
+    Settings are read from the Campaign object (per-campaign):
+      campaign.recap_context_enabled (bool) – master toggle
+      campaign.recap_context_count   (int)  – how many recaps to include; 0 = all
+    """
+    import tempfile
+
+    campaign = session.campaign
+    if not campaign.recap_context_enabled:
+        return None
+
+    count = int(campaign.recap_context_count or 0)
+
+    query = (
+        Session.query
+        .filter(
+            Session.campaign_id == session.campaign_id,
+            Session.id != session.id,
+            Session.summary_text != None,
+            Session.summary_text != ''
+        )
+        .order_by(Session.session_number.desc())
+    )
+
+    if count > 0:
+        query = query.limit(count)
+
+    prior_sessions = query.all()
+
+    if not prior_sessions:
+        return None
+
+    # Reverse to chronological order (oldest → newest)
+    prior_sessions = list(reversed(prior_sessions))
+
+    lines = ["=== Previous Session Recaps ==="]
+    for s in prior_sessions:
+        date_str = s.session_date.strftime('%B %d, %Y')
+        lines.append(f"\n--- Session {s.session_number} ({date_str}) ---\n")
+        lines.append(s.summary_text.strip())
+
+    context_text = "\n".join(lines)
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.txt', prefix='recap_context_',
+        delete=False, encoding='utf-8'
+    )
+    tmp.write(context_text)
+    tmp.close()
+
+    return tmp.name
+
+
 # --- PROVIDER FUNCTIONS ---
 # All providers now return Tuple: (text_content, stats_dict)
 
-def send_google(prompt, transcript_path, config):
+def send_google(prompt, transcript_path, config, recap_context_path=None):
     api_key = config['llm_api_key']
     model = config['llm_model']
     
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
-    
+
+    parts = [
+        {"text": f"The following file is the session transcript ({os.path.basename(transcript_path)}):"},
+        {"inlineData": {"mimeType": "text/plain", "data": encoded_file}}
+    ]
+
+    if recap_context_path:
+        with open(recap_context_path, "rb") as f:
+            encoded_recap = base64.b64encode(f.read()).decode('utf-8')
+        parts.append({"text": "The following file contains previous session recaps (previous_recaps.txt):"})
+        parts.append({"inlineData": {"mimeType": "text/plain", "data": encoded_recap}})
+
+    parts.append({"text": prompt})
+
     payload = {
-        "contents": [{
-            "parts": [
-                {"inlineData": {"mimeType": "text/plain", "data": encoded_file}},
-                {"text": prompt}
-            ]
-        }]
+        "contents": [{"parts": parts}]
     }
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={api_key}"
@@ -177,7 +245,7 @@ def send_google(prompt, transcript_path, config):
     }
     return full_text, stats
 
-def send_anthropic(prompt, transcript_path, config):
+def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
     api_key = config['llm_api_key']
     model = config['llm_model']
     
@@ -189,26 +257,37 @@ def send_anthropic(prompt, transcript_path, config):
     }
     
     with open(transcript_path, 'rb') as f:
-        file_response = requests.post(files_url, headers=headers, files={"file": f})
+        file_response = requests.post(files_url, headers=headers,
+                                      files={"file": (os.path.basename(transcript_path), f, "text/plain")})
     
     if file_response.status_code not in [200, 201]:
          raise Exception(f"Anthropic File Upload Failed: {file_response.text}")
          
     file_id = file_response.json().get('id')
-    
+
+    # Optionally upload the recap context as a second file
+    recap_file_id = None
+    if recap_context_path:
+        with open(recap_context_path, 'rb') as f:
+            recap_response = requests.post(files_url, headers=headers,
+                                           files={"file": ("previous_recaps.txt", f, "text/plain")})
+        if recap_response.status_code in [200, 201]:
+            recap_file_id = recap_response.json().get('id')
+        else:
+            logging.warning(f"Anthropic recap context upload failed: {recap_response.text}")
+
+    content = [
+        {"type": "text", "text": prompt},
+        {"type": "document", "source": {"type": "file", "file_id": file_id}}
+    ]
+    if recap_file_id:
+        content.append({"type": "document", "source": {"type": "file", "file_id": recap_file_id}})
+
     msg_url = "https://api.anthropic.com/v1/messages"
     payload = {
         "model": model,
         "max_tokens": 4096,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "document", "source": {"type": "file", "file_id": file_id}}
-                ]
-            }
-        ]
+        "messages": [{"role": "user", "content": content}]
     }
     
     start_time = time.time()
@@ -241,29 +320,35 @@ def send_anthropic(prompt, transcript_path, config):
     }
     return full_text, stats
 
-def send_openai(prompt, transcript_path, config):
+def send_openai(prompt, transcript_path, config, recap_context_path=None):
     api_key = config['llm_api_key']
     model = config['llm_model']
     
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
-    
+
+    content = [
+        {
+            "type": "input_file",
+            "filename": os.path.basename(transcript_path),
+            "file_data": f"data:text/plain;base64,{encoded_file}"
+        }
+    ]
+
+    if recap_context_path:
+        with open(recap_context_path, "rb") as f:
+            encoded_recap = base64.b64encode(f.read()).decode('utf-8')
+        content.append({
+            "type": "input_file",
+            "filename": "previous_recaps.txt",
+            "file_data": f"data:text/plain;base64,{encoded_recap}"
+        })
+
+    content.append({"type": "input_text", "text": prompt})
+
     payload = {
         "model": model,
-        "input": [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "input_file",
-                    "filename": os.path.basename(transcript_path),
-                    "file_data": f"data:text/plain;base64,{encoded_file}"
-                },
-                {
-                    "type": "input_text",
-                    "text": prompt
-                }
-            ]
-        }]
+        "input": [{"role": "user", "content": content}]
     }
 
     url = "https://api.openai.com/v1/responses"
@@ -305,7 +390,7 @@ def send_openai(prompt, transcript_path, config):
     }
     return full_text, stats
 
-def send_ollama(prompt, transcript_path, config):
+def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     base_url = config.get('ollama_url') or os.environ.get("OLLAMA_URL", "http://ollama:11434")
     
     # Clean up URL (handle trailing slashes or missing http)
@@ -318,7 +403,13 @@ def send_ollama(prompt, transcript_path, config):
     with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
         file_content = f.read()
 
-    combined_content = f"{prompt}\n\n### {os.path.basename(transcript_path)}\n{file_content}"
+    recap_section = ""
+    if recap_context_path:
+        with open(recap_context_path, "r", encoding="utf-8", errors="ignore") as f:
+            recap_content = f.read()
+        recap_section = f"\n\n### previous_recaps.txt\n{recap_content}"
+
+    combined_content = f"{prompt}\n\n### {os.path.basename(transcript_path)}\n{file_content}{recap_section}"
     
     payload = {
         "model": config['llm_model'],
@@ -473,17 +564,27 @@ def run_summary(job, config, post_to_discord_enabled=True):
     
     provider = config.get('llm_provider', 'Google')
     job.logs += f"\nStarting Summary with {provider}..."
-    
+
+    # Build recap context file (if feature is enabled)
+    recap_context_path = None
+    try:
+        recap_context_path = build_recap_context_file(session, config)
+        if recap_context_path:
+            job.logs += "\nRecap context file built — attaching previous recaps."
+    except Exception as e:
+        logging.warning(f"Failed to build recap context: {e}")
+        job.logs += f"\nWarning: Could not build recap context ({e}). Continuing without it."
+
     try:
         # 1. Get Summary and Stats
         if provider == 'Google':
-            summary, stats = send_google(prompt, transcript_path, config)
+            summary, stats = send_google(prompt, transcript_path, config, recap_context_path)
         elif provider == 'Anthropic':
-            summary, stats = send_anthropic(prompt, transcript_path, config)
+            summary, stats = send_anthropic(prompt, transcript_path, config, recap_context_path)
         elif provider == 'OpenAI':
-            summary, stats = send_openai(prompt, transcript_path, config)
+            summary, stats = send_openai(prompt, transcript_path, config, recap_context_path)
         elif provider == 'Ollama':
-            summary, stats = send_ollama(prompt, transcript_path, config)
+            summary, stats = send_ollama(prompt, transcript_path, config, recap_context_path)
         else:
             raise Exception(f"Unknown Provider: {provider}")
 
@@ -538,6 +639,13 @@ def run_summary(job, config, post_to_discord_enabled=True):
     except Exception as e:
         job.logs += f"\nLLM Error: {str(e)}"
         raise e
+    finally:
+        # Clean up recap context temp file if one was created
+        if recap_context_path and os.path.exists(recap_context_path):
+            try:
+                os.unlink(recap_context_path)
+            except Exception:
+                pass
 
 def run_discord_post(job, config):
     session = Session.query.get(job.session_id)

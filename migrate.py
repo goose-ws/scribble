@@ -29,6 +29,24 @@ def run_migration():
                     conn.execute(text("ALTER TABLE campaign ADD COLUMN is_default BOOLEAN DEFAULT 0"))
                     conn.commit()
 
+                # --- Campaign: recap_context_enabled ---
+                try:
+                    conn.execute(text("SELECT recap_context_enabled FROM campaign LIMIT 1"))
+                    logger.info("Column 'recap_context_enabled' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'recap_context_enabled' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN recap_context_enabled BOOLEAN DEFAULT 0"))
+                    conn.commit()
+
+                # --- Campaign: recap_context_count ---
+                try:
+                    conn.execute(text("SELECT recap_context_count FROM campaign LIMIT 1"))
+                    logger.info("Column 'recap_context_count' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'recap_context_count' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN recap_context_count INTEGER DEFAULT 3"))
+                    conn.commit()
+
                 # --- DiscordLog: session_id ---
                 try:
                     conn.execute(text("SELECT session_id FROM discord_log LIMIT 1"))

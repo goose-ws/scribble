@@ -71,6 +71,31 @@
                 </div>
             </div>
 
+            <div class="col-12 mb-3">
+                <div class="card bg-light border-0">
+                    <div class="card-body py-2">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="recap_context_enabled"
+                                   id="create_recap_context_enabled" onchange="toggleCreateRecapCount()">
+                            <label class="form-check-label fw-bold" for="create_recap_context_enabled">
+                                Include Previous Recaps as Context
+                            </label>
+                            <div class="form-text small mt-0">
+                                Attach a compilation of prior session recaps to each LLM request, giving the AI narrative continuity across sessions.
+                            </div>
+                        </div>
+                        <div id="create-recap-count-group" class="mt-2" style="display: none;">
+                            <label class="form-label small mb-1">Number of Previous Recaps to Include</label>
+                            <input type="number" name="recap_context_count" class="form-control form-control-sm"
+                                   min="0" step="1" value="3">
+                            <div class="form-text small mt-1">
+                                Most recent recaps are used first. Set to <code>0</code> to include all available recaps.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg"></i> Create Campaign</button>
         </form>
     </div>
@@ -132,4 +157,10 @@
         </tbody>
     </table>
 </div>
+<script>
+    function toggleCreateRecapCount() {
+        const enabled = document.getElementById('create_recap_context_enabled').checked;
+        document.getElementById('create-recap-count-group').style.display = enabled ? 'block' : 'none';
+    }
+</script>
 {% endblock %}

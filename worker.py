@@ -241,6 +241,7 @@ class JobManager(threading.Thread):
             elif job.step == 'post_discord':
                 from llm_engine import run_discord_post
                 run_discord_post(job, config)
+                session.status = 'Completed'
                 job.status = 'completed'
                 db.session.commit()
                 return

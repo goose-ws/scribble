@@ -26,7 +26,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.2.6'
+APP_VERSION = '4.2.7'
 @app.context_processor
 def inject_version():
     return dict(app_version=APP_VERSION)
@@ -328,7 +328,9 @@ def campaigns():
             name=name,
             discord_webhook=request.form.get('discord_webhook'),
             system_prompt=request.form.get('system_prompt'),
-            script_paths=script_paths_str
+            script_paths=script_paths_str,
+            recap_context_enabled='recap_context_enabled' in request.form,
+            recap_context_count=int(request.form.get('recap_context_count') or 3)
         )
         try:
             db.session.add(new_campaign)
@@ -368,6 +370,10 @@ def edit_campaign(id):
         # Handle Script Selection
         selected_scripts = request.form.getlist('scripts')
         campaign.script_paths = ",".join(selected_scripts)
+
+        # Recap context
+        campaign.recap_context_enabled = 'recap_context_enabled' in request.form
+        campaign.recap_context_count = int(request.form.get('recap_context_count') or 3)
 
         # [FIXED] Robust Default Logic
         should_be_default = 'is_default' in request.form

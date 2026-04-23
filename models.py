@@ -12,7 +12,9 @@ class Campaign(db.Model):
     is_default = db.Column(db.Boolean, default=False)
     discord_webhook = db.Column(db.String(255), nullable=True)
     system_prompt = db.Column(LargeText(), nullable=True) # Prompts can be long
-    script_paths = db.Column(db.String(500), default="") 
+    script_paths = db.Column(db.String(500), default="")
+    recap_context_enabled = db.Column(db.Boolean, default=False)
+    recap_context_count = db.Column(db.Integer, default=3)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     sessions = db.relationship('Session', backref='campaign', lazy=True)
 
