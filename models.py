@@ -15,6 +15,8 @@ class Campaign(db.Model):
     script_paths = db.Column(db.String(500), default="")
     recap_context_enabled = db.Column(db.Boolean, default=False)
     recap_context_count = db.Column(db.Integer, default=3)
+    llm_provider = db.Column(db.String(50), nullable=True)  # New override fields
+    llm_model = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     sessions = db.relationship('Session', backref='campaign', lazy=True)
 

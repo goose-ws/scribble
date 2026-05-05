@@ -15,11 +15,9 @@ from string import Template
 
 def calculate_cost(prompt_tokens, completion_tokens, config):
     try:
-        # Robust conversion that handles empty strings or bad text
         input_cost_str = str(config.get('llm_input_cost', '0')).strip()
         output_cost_str = str(config.get('llm_output_cost', '0')).strip()
         
-        # Helper to safely parse float
         def safe_float(val):
             try: return float(val)
             except ValueError: return 0.0
@@ -35,35 +33,23 @@ def calculate_cost(prompt_tokens, completion_tokens, config):
         return 0.0
 
 def clean_markdown(text):
-    """Enforces House Style on the recap markdown."""
     DIVIDER = "~~          ~~"
 
-    # 1. Normalize Headings: Replace ####+ with ###
-    # (Matches 4 or more '#' at the start of a line and replaces with '### ')
     text = re.sub(r'^#{4,}\s*', '### ', text, flags=re.MULTILINE)
-
-    # 2. Replace '***' horizontal rules with custom ASCII divider
-    # (Matches lines that contain ONLY '***', ignoring whitespace)
     text = re.sub(r'^\s*\*\*\*\s*$', DIVIDER, text, flags=re.MULTILINE)
-
-    # 3. Enforce spacing (Blank line above and below)
-    # (Collapses any whitespace around the divider into exactly 2 newlines)
     text = re.sub(r'\s*' + re.escape(DIVIDER) + r'\s*', f'\n\n{DIVIDER}\n\n', text)
     
     return text.strip()
 
 def format_duration(seconds):
-    """Formats seconds to matching bash style (e.g. 12.345s)"""
     return f"{seconds:.3f}s"
 
 def log_llm_request(provider, model, usage, timing, req_data, res_data, status, finish_reason, config):
-    # Default to full dump
     req_str = json.dumps(req_data)
     res_str = json.dumps(res_data)
     
     if config.get('db_space_saver'):
-        # 1. Truncate Request
-        if 'contents' in req_data: # Gemini
+        if 'contents' in req_data:
             try:
                 for c in req_data['contents']:
                     for p in c.get('parts', []):
@@ -71,9 +57,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
                 req_str = json.dumps(req_data)
             except: pass
 
-        # 2. Truncate Response
         try:
-            # Gemini responses can be a Dict or a List (if streaming chunks)
             items = res_data if isinstance(res_data, list) else [res_data]
             
             data_modified = False
@@ -82,7 +66,6 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
                     for cand in item['candidates']:
                         if 'content' in cand and 'parts' in cand['content']:
                             for part in cand['content']['parts']:
-                                # Check for "thought" field (Gemini 2.0 Thinking)
                                 if 'thought' in part:
                                     part['thought'] = "[TRUNCATED]"
                                     data_modified = True
@@ -90,7 +73,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
             if data_modified:
                 res_str = json.dumps(res_data)
         except Exception:
-            pass # Fail silently and log the full original if parsing fails
+            pass
 
     log_entry = LLMLog(
         provider=provider,
@@ -111,15 +94,6 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
 # --- RECAP CONTEXT BUILDER ---
 
 def build_recap_context_file(session, config):
-    """
-    Compiles previous session recaps for the same campaign into a single temp file.
-    Returns the file path (str), or None if the feature is disabled or no prior
-    recaps exist.
-
-    Settings are read from the Campaign object (per-campaign):
-      campaign.recap_context_enabled (bool) – master toggle
-      campaign.recap_context_count   (int)  – how many recaps to include; 0 = all
-    """
     import tempfile
 
     campaign = session.campaign
@@ -147,7 +121,6 @@ def build_recap_context_file(session, config):
     if not prior_sessions:
         return None
 
-    # Reverse to chronological order (oldest → newest)
     prior_sessions = list(reversed(prior_sessions))
 
     lines = ["=== Previous Session Recaps ==="]
@@ -169,11 +142,13 @@ def build_recap_context_file(session, config):
 
 
 # --- PROVIDER FUNCTIONS ---
-# All providers now return Tuple: (text_content, stats_dict)
 
 def send_google(prompt, transcript_path, config, recap_context_path=None):
-    api_key = config['llm_api_key']
-    model = config['llm_model']
+    api_key = config.get('google_api_key')
+    if not api_key:
+        raise Exception("Google API Key is missing. Please configure it in Settings.")
+        
+    model = config['active_llm_model']
     
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
@@ -242,8 +217,11 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     return full_text, stats
 
 def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
-    api_key = config['llm_api_key']
-    model = config['llm_model']
+    api_key = config.get('anthropic_api_key')
+    if not api_key:
+        raise Exception("Anthropic API Key is missing. Please configure it in Settings.")
+        
+    model = config['active_llm_model']
     
     files_url = "https://api.anthropic.com/v1/files"
     headers = {
@@ -261,7 +239,6 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
          
     file_id = file_response.json().get('id')
 
-    # Optionally upload the recap context as a second file
     recap_file_id = None
     if recap_context_path:
         with open(recap_context_path, 'rb') as f:
@@ -317,8 +294,11 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
     return full_text, stats
 
 def send_openai(prompt, transcript_path, config, recap_context_path=None):
-    api_key = config['llm_api_key']
-    model = config['llm_model']
+    api_key = config.get('openai_api_key')
+    if not api_key:
+        raise Exception("OpenAI API Key is missing. Please configure it in Settings.")
+        
+    model = config['active_llm_model']
     
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
@@ -388,8 +368,8 @@ def send_openai(prompt, transcript_path, config, recap_context_path=None):
 
 def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     base_url = config.get('ollama_url') or os.environ.get("OLLAMA_URL", "http://ollama:11434")
+    model = config['active_llm_model']
     
-    # Clean up URL (handle trailing slashes or missing http)
     if not base_url.startswith('http'):
         base_url = f"http://{base_url}"
     base_url = base_url.rstrip('/')
@@ -408,7 +388,7 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     combined_content = f"{prompt}\n\n### {os.path.basename(transcript_path)}\n{file_content}{recap_section}"
     
     payload = {
-        "model": config['llm_model'],
+        "model": model,
         "messages": [{"role": "user", "content": combined_content}],
         "stream": False
     }
@@ -429,11 +409,11 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     full_text = res_json.get('choices', [{}])[0].get('message', {}).get('content', '')
     finish_reason = res_json.get('choices', [{}])[0].get('finish_reason', 'unknown')
 
-    log_llm_request('Ollama', config['llm_model'], usage, duration, payload, res_json, response.status_code, finish_reason, config)
+    log_llm_request('Ollama', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
     
     stats = {
         'provider': 'Ollama',
-        'model': config['llm_model'],
+        'model': model,
         'duration': duration,
         'tokens': usage
     }
@@ -449,13 +429,13 @@ def send_discord_request(url, payload, session_id=None):
         try:
             res_json = response.json()
         except:
-            res_json = {"body": response.text} # Handle non-JSON responses
+            res_json = {"body": response.text}
             
         log = DiscordLog(
             session_id=session_id,
             message_id=str(res_json.get('id', '')),
             channel_id=str(res_json.get('channel_id', '')),
-            content=payload.get('content', '')[:3000], # Store content (safe truncate)
+            content=payload.get('content', '')[:3000],
             duration_seconds=duration,
             http_status=response.status_code,
             request_json=json.dumps(payload),
@@ -467,7 +447,6 @@ def send_discord_request(url, payload, session_id=None):
         return response
     except Exception as e:
         logging.error(f"Discord Request Failed: {e}")
-        # Return a dummy failure response object if request crashed
         class DummyResponse:
             status_code = 500
             text = str(e)
@@ -480,18 +459,15 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
         
     title = f"{title_date} Session Recap"
     
-    # 1. Create Thread
     start_payload = {
         "content": f"# {title}",
         "thread_name": title
     }
     
-    # Use our new logging helper
     res = send_discord_request(f"{webhook_url}?wait=true", start_payload, session_id)
     
     if res.status_code not in [200, 201, 204]:
         logging.error(f"Discord Thread Creation Failed: {res.text}")
-        # Fallback to main channel if thread creation fails
         thread_webhook = webhook_url
     else:
         try:
@@ -500,7 +476,6 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
         except:
             thread_webhook = webhook_url
 
-    # 2. Chunk and Send
     paragraphs = summary_text.split('\n\n')
     
     for p in paragraphs:
@@ -521,12 +496,9 @@ def run_summary(job, config, post_to_discord_enabled=True):
     
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
     
-    # [FIX] Check for file, if missing try to restore from DB
     if not os.path.exists(transcript_path):
         if session.transcript_text:
-            # Ensure folder exists
             os.makedirs(session.directory_path, exist_ok=True)
-            # Write DB content to file so LLM provider can read it
             with open(transcript_path, 'w', encoding='utf-8') as f:
                 f.write(session.transcript_text)
             job.logs += "\n[System] Restored transcript file from database."
@@ -537,12 +509,8 @@ def run_summary(job, config, post_to_discord_enabled=True):
     if not prompt:
         prompt = "Summarize this DnD session."
         
-    # We use safe_substitute so it doesn't crash if the user makes a typo
-    # or if a variable is missing. It just leaves the ${var} string in place.
     template = Template(prompt)
     
-    # Calculate the variables
-    # Format date nicely: "February 10, 2026"
     target_tz_str = os.environ.get('TZ', 'UTC')
     try:
         local_tz = pytz.timezone(target_tz_str)
@@ -558,10 +526,16 @@ def run_summary(job, config, post_to_discord_enabled=True):
         sessionDate=formatted_date
     )
     
-    provider = config.get('llm_provider', 'Google')
-    job.logs += f"\nStarting Summary with {provider}..."
+    # Allow Campaigns to Override Default LLM
+    effective_provider = session.campaign.llm_provider or config.get('default_llm_provider', 'Google')
+    effective_model = session.campaign.llm_model or config.get('default_llm_model', 'gemini-2.5-flash')
+    
+    config['active_llm_provider'] = effective_provider
+    config['active_llm_model'] = effective_model
+    
+    provider = effective_provider
+    job.logs += f"\nStarting Summary with {provider} ({effective_model})..."
 
-    # Build recap context file (if feature is enabled)
     recap_context_path = None
     try:
         recap_context_path = build_recap_context_file(session, config)
@@ -572,7 +546,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
         job.logs += f"\nWarning: Could not build recap context ({e}). Continuing without it."
 
     try:
-        # 1. Get Summary and Stats
         if provider == 'Google':
             summary, stats = send_google(prompt, transcript_path, config, recap_context_path)
         elif provider == 'Anthropic':
@@ -584,7 +557,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
         else:
             raise Exception(f"Unknown Provider: {provider}")
 
-        # 2. Format Date (LOCAL TIME)
         target_tz_str = os.environ.get('TZ', 'UTC')
         try:
             local_tz = pytz.timezone(target_tz_str)
@@ -595,7 +567,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
             logging.error(f"Timezone error: {e}")
             formatted_date = session.session_date.strftime("%B %d, %Y")
 
-        # 3. Construct Header
         tokens = stats['tokens']
         header = (
             f"## {formatted_date} Session Recap\n\n"
@@ -605,13 +576,9 @@ def run_summary(job, config, post_to_discord_enabled=True):
             f"🧾 Tokens: `{tokens['prompt']} in | {tokens['completion']} out | {tokens['total']} total`\n\n"
         )
         
-        # Combine Header + Summary
         raw_content = header + summary
-        
-        # [CHANGE] Apply Cleanup Function
         final_content = clean_markdown(raw_content)
 
-        # 4. Save to Disk
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
         with open(recap_path, 'w', encoding='utf-8') as f:
             f.write(final_content)
@@ -621,7 +588,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
         
         job.logs += "\nSummary generated successfully."
         
-        # 5. Send to Discord (CONDITIONAL)
         if post_to_discord_enabled:
             if session.campaign.discord_webhook:
                 job.logs += "\nSending to Discord..."
@@ -636,7 +602,6 @@ def run_summary(job, config, post_to_discord_enabled=True):
         job.logs += f"\nLLM Error: {str(e)}"
         raise e
     finally:
-        # Clean up recap context temp file if one was created
         if recap_context_path and os.path.exists(recap_context_path):
             try:
                 os.unlink(recap_context_path)
@@ -647,7 +612,6 @@ def run_discord_post(job, config):
     session = Session.query.get(job.session_id)
     
     if not session.summary_text:
-        # Try loading from disk if DB is empty
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
         if os.path.exists(recap_path):
             with open(recap_path, 'r', encoding='utf-8') as f:

@@ -10,16 +10,31 @@
         <form method="POST">
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">Campaign Name</label>
+                    <label class="form-label fw-bold">Campaign Name</label>
                     <input type="text" name="name" class="form-control" value="{{ campaign.name }}" required>
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">Discord Webhook URL</label>
+                    <label class="form-label fw-bold">Discord Webhook URL</label>
                     <input type="text" name="discord_webhook" class="form-control" value="{{ campaign.discord_webhook or '' }}">
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold text-primary">LLM Provider Override</label>
+                    <select name="llm_provider" class="form-select border-primary">
+                        <option value="Default" {% if not campaign.llm_provider %}selected{% endif %}>-- Inherit Global Default --</option>
+                        <option value="Google" {% if campaign.llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
+                        <option value="OpenAI" {% if campaign.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                        <option value="Anthropic" {% if campaign.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                        <option value="Ollama" {% if campaign.llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label fw-bold text-primary">LLM Model Override</label>
+                    <input type="text" name="llm_model" class="form-control border-primary" value="{{ campaign.llm_model or '' }}" placeholder="Leave blank to use global default">
                 </div>
                 
                 <div class="mb-3">
-                    <label for="system_prompt" class="form-label">System Prompt</label>
+                    <label for="system_prompt" class="form-label fw-bold">System Prompt</label>
                     <textarea class="form-control" id="system_prompt" name="system_prompt" rows="14">{{ campaign.system_prompt or '' }}</textarea>
                     <div class="form-text text-muted">
                         Available variables: 
@@ -31,7 +46,7 @@
                 </div>
                 
                 <div class="col-12 mb-3">
-                    <label class="form-label">Custom Scripts (/data/scripts)</label>
+                    <label class="form-label fw-bold">Custom Scripts (/data/scripts)</label>
                     <div class="card">
                         <div class="card-body p-2" style="max-height: 150px; overflow-y: auto;">
                             {% if available_scripts %}

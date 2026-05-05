@@ -37,27 +37,18 @@ init_db(app)
 @app.context_processor
 def utility_processor():
     """Inject smart path check into templates."""
-    # [CHANGE] Add filename argument with default None
     def folder_exists_check(path, filename=None):
-        # 1. Happy path: The original folder exists
         if os.path.exists(path):
             return True
 
-        # 2. Fallback: Check if it was archived to /data/archive
         try:
             archive_dir = '/data/archive'
-
-            # Check A: Does a file match the directory ID? (Old logic)
             session_name = os.path.basename(path.rstrip('/'))
             if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")): return True
             if os.path.exists(os.path.join(archive_dir, session_name + ".zip")): return True
 
-            # [CHANGE] Check B: Does a file match the Original Filename?
             if filename:
-                # Direct match
                 if os.path.exists(os.path.join(archive_dir, filename)): return True
-
-                # Suffix match (Handles date prefixes like "2025-12-19_craig...")
                 if os.path.exists(archive_dir):
                     for f in os.listdir(archive_dir):
                         if f.endswith(filename):
@@ -92,50 +83,39 @@ LAST_CHECK_TIME = 0
 CHECK_INTERVAL = 3600  # Check once per hour
 
 def get_remote_version():
-    """Fetches the APP_VERSION string from the main GitHub repo."""
     global LATEST_VERSION_CACHE, LAST_CHECK_TIME
 
-    # Return cached version if valid
     if LATEST_VERSION_CACHE and (time.time() - LAST_CHECK_TIME < CHECK_INTERVAL):
         return LATEST_VERSION_CACHE
 
     try:
         url = 'https://raw.githubusercontent.com/goose-ws/scribble/refs/heads/main/app.py'
-        # Set a short timeout so we don't hang the page if GitHub is slow
         resp = requests.get(url, timeout=3)
 
         if resp.status_code == 200:
-            # Regex to find: APP_VERSION = 'x.x.x'
             match = re.search(r"APP_VERSION\s*=\s*['\"]([\d\.]+)['\"]", resp.text)
             if match:
                 LATEST_VERSION_CACHE = match.group(1)
                 LAST_CHECK_TIME = time.time()
                 return LATEST_VERSION_CACHE
     except Exception:
-        pass # Fail silently if offline or GitHub is down
+        pass
 
     return None
 
 @app.context_processor
 def inject_update_status():
-    """Makes 'update_available' and 'latest_version' variables available to all templates."""
     remote_ver = get_remote_version()
     is_update = False
-
-    # Simple check: If remote exists and doesn't match local
-    # (We assume 'APP_VERSION' is defined globally in your app.py)
     if remote_ver and remote_ver != APP_VERSION:
         is_update = True
-
     return dict(update_available=is_update, latest_version=remote_ver)
 
 def parse_llm_stats(summary_text):
-    """Extracts stats from the markdown header we generated."""
     stats = {}
     if not summary_text:
         return stats
 
-    # Regex patterns matching your bash/python format
     patterns = {
         'provider': r'🤖 LLM Provider: `(.*?)`',
         'model': r'📋 Model: `(.*?)`',
@@ -147,10 +127,8 @@ def parse_llm_stats(summary_text):
         match = re.search(pattern, summary_text)
         if match:
             val = match.group(1)
-            # [CHANGE] Add commas to token numbers for display
             if key == 'tokens':
                 try:
-                    # Finds sequences of digits and applies comma formatting
                     val = re.sub(r'\d+', lambda m: "{:,}".format(int(m.group(0))), val)
                 except Exception:
                     pass
@@ -159,25 +137,16 @@ def parse_llm_stats(summary_text):
     return stats
 
 def parse_transcription_metrics(job_logs, transcripts):
-    """
-    Parses Job logs to find how long each file took and counts words.
-    Returns: {'username': {'duration': '12s', 'words': 1234}}
-    """
     metrics = {}
     if not job_logs:
         return metrics
 
-    # Regex to capture timestamps from log lines
-    # Format: [HH:MM:SS] Transcribing: file (User: username)
     start_pattern = r'\[(\d{2}:\d{2}:\d{2})\] Transcribing: .*? \(User: (.*?)\)'
-    # Format: [HH:MM:SS] - Completed file...
     end_pattern = r'\[(\d{2}:\d{2}:\d{2})\] - Completed (.*?)[:\.]'
 
-    # Store starts temporarily
     starts = {}
 
     for line in job_logs.split('\n'):
-        # Check Start
         start_match = re.search(start_pattern, line)
         if start_match:
             time_str, username = start_match.groups()
@@ -186,31 +155,19 @@ def parse_transcription_metrics(job_logs, transcripts):
                 metrics[username] = {'duration': '?', 'words': 0}
             continue
 
-        # Check End
-        # Note: The log doesn't list username on completion line, but we process sequentially.
-        # We assume the last started user is the one finishing.
         end_match = re.search(end_pattern, line)
         if end_match and starts:
-            # Get the most recently started user (simple stack logic)
-            # Since your worker is sequential, the last added key in 'starts' is usually the active one
-            # But let's rely on the filename matching if possible.
-            # Simpler approach for sequential logs:
-            current_user = list(starts.keys())[-1] # Get last key
-
+            current_user = list(starts.keys())[-1]
             time_str = end_match.group(1)
             end_time = datetime.strptime(time_str, '%H:%M:%S')
             start_time = starts[current_user]
 
-            # Handle day rollover if needed, though unlikely for single file
             delta = end_time - start_time
             if delta.total_seconds() < 0:
                 delta += timedelta(hours=24)
             metrics[current_user]['duration'] = str(delta)
-
-            # Cleanup
             del starts[current_user]
 
-    # Calculate Word Counts from actual content
     for username, content in transcripts.items():
         if username not in metrics:
             metrics[username] = {'duration': 'N/A'}
@@ -219,7 +176,6 @@ def parse_transcription_metrics(job_logs, transcripts):
     return metrics
 
 def parse_integrations_status(job_logs):
-    """Checks logs for Discord and Custom Script success messages."""
     status = {
         'discord_sent': False,
         'scripts': []
@@ -230,7 +186,6 @@ def parse_integrations_status(job_logs):
     if "Sending to Discord... Sent." in job_logs:
         status['discord_sent'] = True
 
-    # Script logs: "Finished: script_name (Success)" or "Failed: script_name"
     script_pattern = r'(Finished|Failed): (.*?) \((.*?)\)'
     for line in job_logs.split('\n'):
         match = re.search(script_pattern, line)
@@ -278,7 +233,6 @@ def dashboard():
 def settings():
     config = load_config()
     if request.method == 'POST':
-        # Update config dictionary from form data
         for key, value in request.form.items():
             if key in config:
                 if isinstance(config[key], bool):
@@ -304,12 +258,10 @@ def settings():
 @app.route('/campaigns', methods=['GET', 'POST'])
 @login_required
 def campaigns():
-    # Get list of available scripts
     scripts_dir = '/data/scripts'
     if not os.path.exists(scripts_dir):
         os.makedirs(scripts_dir)
 
-    # List only files, not directories
     available_scripts = [f for f in os.listdir(scripts_dir)
                         if os.path.isfile(os.path.join(scripts_dir, f))]
 
@@ -319,10 +271,15 @@ def campaigns():
             flash('Campaign Name is required.', 'error')
             return redirect(url_for('campaigns'))
 
-        # Handle Script Selection (Checkbox list)
         selected_scripts = request.form.getlist('scripts')
-        # Join into a comma-separated string for storage
         script_paths_str = ",".join(selected_scripts)
+
+        # Handle LLM overrides
+        llm_prov = request.form.get('llm_provider')
+        if llm_prov == 'Default': llm_prov = None
+        
+        llm_mod = request.form.get('llm_model')
+        if not llm_mod: llm_mod = None
 
         new_campaign = Campaign(
             name=name,
@@ -330,7 +287,9 @@ def campaigns():
             system_prompt=request.form.get('system_prompt'),
             script_paths=script_paths_str,
             recap_context_enabled='recap_context_enabled' in request.form,
-            recap_context_count=int(request.form.get('recap_context_count') or 3)
+            recap_context_count=int(request.form.get('recap_context_count') or 3),
+            llm_provider=llm_prov,
+            llm_model=llm_mod
         )
         try:
             db.session.add(new_campaign)
@@ -352,7 +311,6 @@ def campaigns():
 def edit_campaign(id):
     campaign = Campaign.query.get_or_404(id)
 
-    # Get list of available scripts
     scripts_dir = '/data/scripts'
     if not os.path.exists(scripts_dir):
         os.makedirs(scripts_dir)
@@ -367,26 +325,25 @@ def edit_campaign(id):
         campaign.discord_webhook = request.form.get('discord_webhook')
         campaign.system_prompt = request.form.get('system_prompt')
 
-        # Handle Script Selection
         selected_scripts = request.form.getlist('scripts')
         campaign.script_paths = ",".join(selected_scripts)
 
-        # Recap context
         campaign.recap_context_enabled = 'recap_context_enabled' in request.form
         campaign.recap_context_count = int(request.form.get('recap_context_count') or 3)
 
-        # [FIXED] Robust Default Logic
+        # Handle LLM overrides
+        llm_prov = request.form.get('llm_provider')
+        campaign.llm_provider = None if llm_prov == 'Default' else llm_prov
+        
+        llm_mod = request.form.get('llm_model')
+        campaign.llm_model = llm_mod if llm_mod else None
+
         should_be_default = 'is_default' in request.form
 
         if should_be_default:
-            # 1. Clear 'is_default' on ALL OTHER campaigns (exclude current ID)
-            # This prevents the bulk update from interfering with our current object
             Campaign.query.filter(Campaign.id != campaign.id).update({Campaign.is_default: False})
-
-            # 2. Set this campaign to True
             campaign.is_default = True
         else:
-            # If unchecked, just set to False
             campaign.is_default = False
 
         try:
@@ -402,14 +359,10 @@ def edit_campaign(id):
                          available_scripts=available_scripts,
                          current_scripts=current_scripts)
 
-# Ensure this route exists as well for the "Star" icon in the list view
 @app.route('/campaigns/set_default/<int:campaign_id>')
 @login_required
 def set_default_campaign(campaign_id):
-    # 1. Unset all
     Campaign.query.update({Campaign.is_default: False})
-
-    # 2. Set new default
     camp = Campaign.query.get_or_404(campaign_id)
     camp.is_default = True
 
@@ -454,8 +407,6 @@ def parse_session_date(info_path):
         logging.error(f"Timezone conversion error: {e}")
         return utc_date, str(utc_date)
 
-# --- CAMPAIGN ROUTES ---
-
 @app.route('/campaigns/<int:campaign_id>')
 @login_required
 def campaign_detail(campaign_id):
@@ -470,50 +421,34 @@ def campaign_detail(campaign_id):
     discord_count = 0
     discord_errors = 0
 
-    # Get all logs linked to these sessions
     session_ids = [s.id for s in sessions]
     if session_ids:
         logs = DiscordLog.query.filter(DiscordLog.session_id.in_(session_ids)).all()
         discord_count = len(logs)
-        # Count non-success statuses (200, 201, 204 are good)
         discord_errors = sum(1 for log in logs if log.http_status not in [200, 201, 204])
 
     for s in sessions:
-        # Words (Approximation from transcript)
         if s.transcript_text:
             total_words += len(s.transcript_text.split())
 
-        # Tokens
-        # Format usually: "54,452 in | 2,188 out | 56,640 total"
         stats = parse_llm_stats(s.summary_text)
         token_str = stats.get('tokens', '')
 
         if token_str:
-            # 1. Try to parse full breakdown
             match = re.search(r'([\d,]+)\s+in\s*\|\s*([\d,]+)\s+out\s*\|\s*([\d,]+)\s+total', token_str)
             if match:
                 try:
-                    i = int(match.group(1).replace(',', ''))
-                    o = int(match.group(2).replace(',', ''))
-                    t = int(match.group(3).replace(',', ''))
-
-                    total_in += i
-                    total_out += o
-                    total_combined += t
+                    total_in += int(match.group(1).replace(',', ''))
+                    total_out += int(match.group(2).replace(',', ''))
+                    total_combined += int(match.group(3).replace(',', ''))
                 except: pass
             else:
-                # 2. Fallback: Try to find just "X total"
                 match_total = re.search(r'([\d,]+)\s+total', token_str)
                 if match_total:
-                    try:
-                        t = int(match_total.group(1).replace(',', ''))
-                        total_combined += t
+                    try: total_combined += int(match_total.group(1).replace(',', ''))
                     except: pass
                 else:
-                    # 3. Fallback: Try raw number
-                    try:
-                        t = int(token_str.replace(',', ''))
-                        total_combined += t
+                    try: total_combined += int(token_str.replace(',', ''))
                     except: pass
 
     return render_template('campaign_detail.html',
@@ -527,15 +462,12 @@ def campaign_detail(campaign_id):
                            discord_count=discord_count,
                            discord_errors=discord_errors)
 
-# In app.py
-
 @app.route('/campaigns/<int:campaign_id>/download_pdf/<doc_type>')
 @login_required
 def download_campaign_pdf(campaign_id, doc_type):
     campaign = Campaign.query.get_or_404(campaign_id)
     sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.asc()).all()
 
-    # CSS for the PDF
     html_content = f"""
     <html>
     <head>
@@ -548,19 +480,14 @@ def download_campaign_pdf(campaign_id, doc_type):
             .toc-entry {{ margin-bottom: 5px; font-size: 11pt; }}
             .toc-entry a {{ text-decoration: none; color: #2c3e50; }}
             .page-break {{ page-break-before: always; }}
-
-            /* Transcript specific styles */
             .dialogue-line {{ margin-bottom: 8px; text-align: left; }}
             .speaker {{ font-weight: bold; color: #444; }}
-
-            /* Recap specific styles */
             .recap-content {{ text-align: justify; }}
         </style>
     </head>
     <body>
     """
 
-    # Title Page
     title_text = "Campaign Recap" if doc_type == 'recap' else "Campaign Transcripts"
     html_content += f"""
         <div style="text-align: center; margin-top: 200px;">
@@ -571,7 +498,6 @@ def download_campaign_pdf(campaign_id, doc_type):
         <div class="page-break"></div>
     """
 
-    # Table of Contents
     html_content += "<h1>Table of Contents</h1>"
     for s in sessions:
         if doc_type == 'recap' and not s.summary_text: continue
@@ -586,7 +512,6 @@ def download_campaign_pdf(campaign_id, doc_type):
 
     html_content += "<div class='page-break'></div>"
 
-    # Content Loop
     for s in sessions:
         date_str = s.session_date.strftime('%B %d, %Y')
         anchor = f'<a name="session_{s.id}"></a>'
@@ -594,8 +519,6 @@ def download_campaign_pdf(campaign_id, doc_type):
         if doc_type == 'recap':
             if not s.summary_text: continue
 
-            # Markdown processing
-            clean_summary = ""
             lines = s.summary_text.split('\n')
             header_ended = False
             content_lines = []
@@ -633,19 +556,12 @@ def download_campaign_pdf(campaign_id, doc_type):
                 if not line: continue
 
                 safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-
-                # FIXED LOGIC:
-                # 1. Find the closing bracket of the timestamp "]"
-                # 2. Find the first colon ":" AFTER that bracket
                 bracket_idx = safe_line.find(']')
                 sep_idx = safe_line.find(':', bracket_idx) if bracket_idx != -1 else -1
 
                 if bracket_idx != -1 and sep_idx != -1:
-                    # We found a timestamp and a speaker separator
-                    # safe_line[:sep_idx+1] includes the colon -> "[00:00:00] Speaker:"
                     formatted_line = f"<span class='speaker'>{safe_line[:sep_idx+1]}</span>{safe_line[sep_idx+1:]}"
                 else:
-                    # No timestamp/speaker structure found, print as is
                     formatted_line = safe_line
 
                 html_content += f"<div class='dialogue-line'>{formatted_line}</div>"
@@ -654,7 +570,6 @@ def download_campaign_pdf(campaign_id, doc_type):
 
     html_content += "</body></html>"
 
-    # Create PDF
     pdf_output = BytesIO()
     pisa_status = pisa.CreatePDF(html_content, dest=pdf_output)
 
@@ -676,7 +591,6 @@ def upload():
     if request.method == 'GET':
         campaigns = Campaign.query.all()
 
-        # Prepare Data for Frontend
         default_campaign_id = None
         next_numbers = {}
 
@@ -684,7 +598,6 @@ def upload():
             if c.is_default:
                 default_campaign_id = c.id
 
-            # Calculate next number for this campaign
             max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=c.id).scalar()
             next_numbers[c.id] = 0 if max_sess is None else max_sess + 1
 
@@ -693,13 +606,11 @@ def upload():
                                default_campaign_id=default_campaign_id,
                                next_numbers=next_numbers)
 
-    # --- POST (Upload Handling) ---
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
 
     file = request.files['file']
     campaign_id = request.form.get('campaign_id')
-    # [NEW] Get the manual session number
     manual_session_number = request.form.get('session_number')
 
     if file.filename == '':
@@ -719,27 +630,21 @@ def upload():
         try:
             file.save(zip_path)
 
-            # ... [Keep your existing ZIP validation code here] ...
             if not zipfile.is_zipfile(zip_path): raise Exception("Not a zip.")
             with zipfile.ZipFile(zip_path, 'r') as z: z.extractall(upload_dir)
-            # ... [End validation] ...
 
-            # Parse Date
             info_path = os.path.join(upload_dir, 'info.txt')
             session_date_utc, local_time_str = parse_session_date(info_path)
 
-            # [NEW] Determine Session Number
             if manual_session_number:
                 final_session_num = int(manual_session_number)
             else:
-                # Fallback calculation
                 max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=campaign_id).scalar()
                 final_session_num = 0 if max_sess is None else max_sess + 1
 
-            # Create DB Records
             new_session = Session(
                 campaign_id=campaign_id,
-                session_number=final_session_num, # Use the determined number
+                session_number=final_session_num,
                 session_date=session_date_utc,
                 local_time_str=local_time_str,
                 original_filename=filename,
@@ -747,7 +652,6 @@ def upload():
                 status="Processing"
             )
 
-            # ... [Keep existing Job creation and return] ...
             db.session.add(new_session)
             db.session.commit()
 
@@ -782,36 +686,22 @@ def api_metrics():
     period = request.args.get('period', '7d')
     now = datetime.utcnow()
 
-    # Calculate Date Range
-    if period == '24h':
-        start_date = now - timedelta(hours=24)
-    elif period == '7d':
-        start_date = now - timedelta(days=7)
-    elif period == '30d':
-        start_date = now - timedelta(days=30)
-    elif period == '365d':
-        start_date = now - timedelta(days=365)
-    elif period == 'all':
-        start_date = datetime(1970, 1, 1)
-    else:
-        start_date = now - timedelta(days=7) # Default
+    if period == '24h': start_date = now - timedelta(hours=24)
+    elif period == '7d': start_date = now - timedelta(days=7)
+    elif period == '30d': start_date = now - timedelta(days=30)
+    elif period == '365d': start_date = now - timedelta(days=365)
+    elif period == 'all': start_date = datetime(1970, 1, 1)
+    else: start_date = now - timedelta(days=7)
 
-    # 1. General Counts
-    # Campaigns are static, not usually time-bound, but we show total
     total_campaigns = Campaign.query.count()
 
-    # Recaps Generated (Sessions with summary_text in range)
-    # Using Session.created_at for the time filter
     recaps_count = Session.query.filter(
         Session.summary_text != None,
         Session.created_at >= start_date
     ).count()
 
-    # 2. LLM Metrics (Aggregated from LLMLog)
-    # Filter logs by range
     logs_query = LLMLog.query.filter(LLMLog.request_timestamp >= start_date)
 
-    # Aggregates
     stats = logs_query.with_entities(
         func.count(LLMLog.id).label('total_calls'),
         func.sum(LLMLog.total_tokens).label('total_tokens'),
@@ -819,23 +709,18 @@ def api_metrics():
         func.avg(LLMLog.duration_seconds).label('avg_latency')
     ).first()
 
-    # 3. Breakdowns (for Charts)
-
-    # By Provider
     provider_stats = logs_query.with_entities(
         LLMLog.provider,
         func.count(LLMLog.id).label('count'),
         func.sum(LLMLog.cost).label('cost')
     ).group_by(LLMLog.provider).all()
 
-    # By Model
     model_stats = logs_query.with_entities(
         LLMLog.model_name,
         func.count(LLMLog.id).label('count'),
         func.avg(LLMLog.duration_seconds).label('avg_latency')
     ).group_by(LLMLog.model_name).all()
 
-    # Format Data for JSON
     return jsonify({
         'campaigns': total_campaigns,
         'recaps': recaps_count,
@@ -855,13 +740,10 @@ def session_detail(session_id):
 
     job_durations = {}
     for job in jobs:
-        # 1. Completed/Error: Diff between Start and Finish
         if job.status in ['completed', 'error'] and job.updated_at and job.created_at:
             delta = job.updated_at - job.created_at
-        # 2. Processing: Diff between Start and NOW
         elif job.status in ['processing', 'cancelling'] and job.created_at:
             delta = datetime.utcnow() - job.created_at
-        # 3. Pending: Zero
         else:
             delta = timedelta(seconds=0)
 
@@ -870,7 +752,6 @@ def session_detail(session_id):
         h, m = divmod(m, 60)
         job_durations[job.id] = "{:02d}:{:02d}:{:02d}".format(h, m, s)
 
-    # 1. Fetch Transcripts
     transcript_text = session_obj.transcript_text
     if not transcript_text:
         transcript_path = os.path.join(session_obj.directory_path, "session_transcript.txt")
@@ -880,12 +761,9 @@ def session_detail(session_id):
 
     user_transcripts = {t.username: t.content for t in session_obj.transcripts}
 
-    # --- METRICS CALCULATIONS ---
     llm_stats = parse_llm_stats(session_obj.summary_text)
     if 'tokens' not in llm_stats: llm_stats['tokens'] = None
 
-    # Find the main transcription job to parse per-user audio durations
-    # We prefer the latest full 'transcribe' job if multiple exist
     transcribe_jobs = [j for j in jobs if j.step == 'transcribe']
     transcribe_job = transcribe_jobs[-1] if transcribe_jobs else None
 
@@ -898,13 +776,10 @@ def session_detail(session_id):
     if summarize_job:
         integrations = parse_integrations_status(summarize_job.logs)
 
-    # [CHANGED] Calculate Total Audio Duration (Sum of users)
-    # Old logic calculated wall-clock time from session creation to last job (Session Lifespan)
     total_seconds = 0.0
     for stats in user_metrics.values():
         d_str = stats.get('duration', '0:00:00')
         try:
-            # Parse "H:M:S" (e.g., "0:12:01" or "3:03:41")
             parts = d_str.split(':')
             if len(parts) == 3:
                 h, m, s = map(float, parts)
@@ -945,7 +820,6 @@ def save_user_transcript(session_id):
         transcript.content = new_content
         db.session.commit()
 
-        # Update disk file
         try:
             user_path = os.path.join(session_obj.directory_path, "transcripts", f"{username}_transcript.txt")
             with open(user_path, 'w', encoding='utf-8') as f:
@@ -968,7 +842,6 @@ def save_master_transcript(session_id):
     session_obj.transcript_text = new_content
     db.session.commit()
 
-    # Update disk file
     try:
         path = os.path.join(session_obj.directory_path, "session_transcript.txt")
         with open(path, 'w', encoding='utf-8') as f:
@@ -988,7 +861,6 @@ def save_recap(session_id):
     session_obj.summary_text = new_content
     db.session.commit()
 
-    # Update disk file
     try:
         path = os.path.join(session_obj.directory_path, "session_recap.txt")
         with open(path, 'w', encoding='utf-8') as f:
@@ -1035,29 +907,23 @@ def download_file(session_id, file_type):
 def session_action(session_id, action_type):
     session_obj = Session.query.get_or_404(session_id)
 
-    # --- Helper: Smart Restore ---
     def ensure_files_exist(target_user=None):
         logging.info(f"Checking files for Session {session_id} (User: {target_user})...")
 
-        # 1. Check if FLACs already exist on disk
         if os.path.exists(session_obj.directory_path):
             flacs = [f for f in os.listdir(session_obj.directory_path) if f.endswith('.flac')]
 
-            # If we need a specific user, check if THEIR file is there
             if target_user:
                 if any(target_user in f for f in flacs):
                     logging.info("Target user file found on disk.")
                     return True
-            # If we need the full session, check if ANY file is there (imperfect, but fast)
             elif flacs:
                 logging.info("Session files found on disk.")
                 return True
 
-        # 2. Locate Archive
         archive_dir = '/data/archive'
         archive_path = os.path.join(archive_dir, session_obj.original_filename)
 
-        # Handle the timestamp-prefixed filenames (e.g., 2026-02-10_filename.zip)
         if not os.path.exists(archive_path):
              for f in os.listdir(archive_dir):
                 if f.endswith(session_obj.original_filename):
@@ -1069,9 +935,7 @@ def session_action(session_id, action_type):
             try:
                 os.makedirs(session_obj.directory_path, exist_ok=True)
                 with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                    # Smart Extract: Only extract what is needed
                     if target_user:
-                        # Scan zip for the file matching this user
                         found_in_zip = False
                         for name in zip_ref.namelist():
                             if target_user in name and name.endswith('.flac'):
@@ -1094,9 +958,6 @@ def session_action(session_id, action_type):
         logging.error(f"Archive not found for: {session_obj.original_filename}")
         return False
 
-    # --- Action Logic ---
-
-    # 1. Force Re-Transcribe (All or Single)
     if action_type == 'retranscribe' or action_type.startswith('retranscribe_user_'):
 
         target_user = None
@@ -1119,7 +980,6 @@ def session_action(session_id, action_type):
         session_obj.status = "Processing"
         db.session.commit()
 
-    # 2. Rebuild Transcript (Merge Only)
     elif action_type == 'rebuild_transcript':
         try:
             transcripts = Transcript.query.filter_by(session_id=session_obj.id).all()
@@ -1153,7 +1013,6 @@ def session_action(session_id, action_type):
         except Exception as e:
             flash(f'Rebuild failed: {str(e)}', 'danger')
 
-    # 3. Rerun Scripts
     elif action_type == 'rerun_scripts':
         new_job = Job(session_id=session_obj.id, step='run_scripts', status='pending')
         new_job.logs = "Queued for manual script execution..."
@@ -1161,7 +1020,6 @@ def session_action(session_id, action_type):
         db.session.commit()
         flash('Scripts queued for execution.', 'success')
 
-    # 4. Re-Generate Summary (LLM Only)
     elif action_type == 'regenerate_summary':
         transcript_path = os.path.join(session_obj.directory_path, "session_transcript.txt")
         if not os.path.exists(transcript_path) and not session_obj.transcript_text:
@@ -1175,7 +1033,6 @@ def session_action(session_id, action_type):
         db.session.commit()
         flash('Summary re-generation queued.', 'success')
 
-    # 5. Post to Discord (Discord Only)
     elif action_type == 'post_discord':
         if not session_obj.summary_text:
              flash('Error: No summary available to post.', 'danger')
@@ -1190,7 +1047,6 @@ def session_action(session_id, action_type):
 
     return redirect(url_for('session_detail', session_id=session_obj.id))
 
-# In session_status_api
 @app.route('/session/<int:session_id>/status')
 @login_required
 def session_status_api(session_id):
@@ -1227,14 +1083,12 @@ def session_status_api(session_id):
 def delete_session(session_id):
     session_obj = Session.query.get_or_404(session_id)
 
-    # 1. Cleanup Disk
     try:
         if os.path.exists(session_obj.directory_path):
             shutil.rmtree(session_obj.directory_path)
     except Exception as e:
         logging.error(f"Error deleting directory for session {session_id}: {e}")
 
-    # 2. Cleanup Database
     try:
         db.session.delete(session_obj)
         db.session.commit()
@@ -1250,11 +1104,9 @@ def delete_session(session_id):
 def retry_job(job_id):
     job = Job.query.get_or_404(job_id)
 
-    # Reset job state
     job.status = 'pending'
     job.logs += f"\n\n--- Retry initiated by user at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n"
 
-    # If the session was marked "Error" or "Completed", reset it to "Processing"
     job.session.status = "Processing"
 
     db.session.commit()

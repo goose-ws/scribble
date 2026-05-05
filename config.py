@@ -41,13 +41,15 @@ DEFAULT_CONFIG = {
     "vad_min_silence_ms": 1000,
     "vad_max_speech_s": 20.0,
 
-    # LLM
-    "llm_provider": "Google",
-    "llm_model": "gemini-flash-latest",
-    "llm_api_key": "",
+    # LLM Defaults and Keys
+    "default_llm_provider": "Google",
+    "default_llm_model": "gemini-2.5-flash",
+    "google_api_key": "",
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+    "ollama_url": "",
     "llm_input_cost": 0.0,
-    "llm_output_cost": 0.0,
-    "ollama_url": ""
+    "llm_output_cost": 0.0
 }
 
 def load_config():
@@ -61,7 +63,27 @@ def load_config():
         try:
             with open(CONFIG_PATH, 'r') as f:
                 saved_config = json.load(f)
-                config.update(saved_config)
+
+            # --- MIGRATION BLOCK: Migrate old LLM Settings safely ---
+            if 'llm_provider' in saved_config:
+                old_prov = saved_config.pop('llm_provider')
+                if old_prov == 'Local': old_prov = 'Ollama'
+                saved_config['default_llm_provider'] = old_prov
+            
+            if 'llm_model' in saved_config:
+                saved_config['default_llm_model'] = saved_config.pop('llm_model')
+            
+            if 'llm_api_key' in saved_config:
+                old_key = saved_config.pop('llm_api_key')
+                old_prov = saved_config.get('default_llm_provider', 'Google')
+                if old_prov == 'Google' and 'google_api_key' not in saved_config:
+                    saved_config['google_api_key'] = old_key
+                elif old_prov == 'OpenAI' and 'openai_api_key' not in saved_config:
+                    saved_config['openai_api_key'] = old_key
+                elif old_prov == 'Anthropic' and 'anthropic_api_key' not in saved_config:
+                    saved_config['anthropic_api_key'] = old_key
+
+            config.update(saved_config)
             
             # Cleanup deprecated keys
             keys_to_remove = [k for k in config if k not in DEFAULT_CONFIG]
@@ -82,7 +104,7 @@ def load_config():
         logging.warning("="*50)
         save_config(config)
 
-    # Security: Generate Flask Secret Key if missing (NEW)
+    # Security: Generate Flask Secret Key if missing
     if not config['flask_secret_key']:
         new_secret = secrets.token_hex(32)
         config['flask_secret_key'] = new_secret

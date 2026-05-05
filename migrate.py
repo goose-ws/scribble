@@ -47,6 +47,24 @@ def run_migration():
                     conn.execute(text("ALTER TABLE campaign ADD COLUMN recap_context_count INTEGER DEFAULT 3"))
                     conn.commit()
 
+                # --- Campaign: llm_provider ---
+                try:
+                    conn.execute(text("SELECT llm_provider FROM campaign LIMIT 1"))
+                    logger.info("Column 'llm_provider' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'llm_provider' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN llm_provider VARCHAR(50) NULL"))
+                    conn.commit()
+
+                # --- Campaign: llm_model ---
+                try:
+                    conn.execute(text("SELECT llm_model FROM campaign LIMIT 1"))
+                    logger.info("Column 'llm_model' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'llm_model' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN llm_model VARCHAR(100) NULL"))
+                    conn.commit()
+
                 # --- DiscordLog: session_id ---
                 try:
                     conn.execute(text("SELECT session_id FROM discord_log LIMIT 1"))
@@ -57,13 +75,11 @@ def run_migration():
                     conn.execute(text("ALTER TABLE discord_log ADD COLUMN session_id INTEGER NULL"))
                     
                     # 2. Add the Foreign Key
-                    # We wrap this in a try/except because if the table is MyISAM (rare) or 
-                    # there are data inconsistencies, it might fail, but we still want the column.
                     try:
                         logger.info("Adding FK constraint to DiscordLog...")
                         conn.execute(text("ALTER TABLE discord_log ADD CONSTRAINT fk_discord_log_session FOREIGN KEY (session_id) REFERENCES session(id)"))
                     except Exception as e:
-                        logger.warning(f"Could not add FK constraint (this is optional, app will still work): {e}")
+                        logger.warning(f"Could not add FK constraint: {e}")
                     
                     conn.commit()
 

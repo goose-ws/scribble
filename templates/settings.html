@@ -197,39 +197,56 @@
                 </div>
             </div>
 
-            <div class="mb-3">
-                <label class="form-label">LLM Provider</label>
-                <select name="llm_provider" class="form-select" onchange="toggleProviderSettings()">
-                    <option value="Google" {% if config.llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
-                    <option value="OpenAI" {% if config.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
-                    <option value="Anthropic" {% if config.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
-                    <option value="Local" {% if config.llm_provider == 'Local' %}selected{% endif %}>Local (Ollama)</option>
-                </select>
-                <small class="form-text text-muted">The AI service responsible for post-processing or summarization.</small>
+            <div class="card mb-3">
+                <div class="card-header bg-secondary text-white">Global LLM Settings</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Default LLM Provider</label>
+                        <select name="default_llm_provider" class="form-select">
+                            <option value="Google" {% if config.default_llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
+                            <option value="OpenAI" {% if config.default_llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                            <option value="Anthropic" {% if config.default_llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                            <option value="Ollama" {% if config.default_llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
+                        </select>
+                        <small class="form-text text-muted">The AI service used by default if a campaign doesn't override it.</small>
+                    </div>
+        
+                    <div class="mb-3">
+                        <label class="form-label">Default Model Name</label>
+                        <input type="text" name="default_llm_model" class="form-control" value="{{ config.default_llm_model or 'gemini-2.5-flash' }}">
+                        <small class="form-text text-muted">The specific model identifier used by the Default Provider (e.g. gpt-4o, llama3).</small>
+                    </div>
+
+                    <hr>
+                    <h6 class="text-muted mb-3">API Keys & Endpoints</h6>
+        
+                    <div class="mb-3">
+                        <label class="form-label">Google API Key</label>
+                        <input type="password" name="google_api_key" class="form-control form-control-sm" value="{{ config.google_api_key or '' }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">OpenAI API Key</label>
+                        <input type="password" name="openai_api_key" class="form-control form-control-sm" value="{{ config.openai_api_key or '' }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Anthropic API Key</label>
+                        <input type="password" name="anthropic_api_key" class="form-control form-control-sm" value="{{ config.anthropic_api_key or '' }}">
+                    </div>
+        
+                    <div class="mb-3">
+                        <label class="form-label">Ollama URL</label>
+                        <input type="text" name="ollama_url" class="form-control form-control-sm" placeholder="http://ollama:11434" value="{{ config.ollama_url or '' }}">
+                    </div>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label class="form-label">API Key</label>
-                <input type="password" name="llm_api_key" class="form-control" value="{{ config.llm_api_key or '' }}">
-                <small class="form-text text-muted">Required for Google, OpenAI, and Anthropic providers.</small>
-            </div>
-
-            <div class="mb-3" id="ollama-url-group">
-                <label class="form-label">Ollama URL</label>
-                <input type="text" name="ollama_url" class="form-control" placeholder="http://ollama:11434" value="{{ config.ollama_url or '' }}">
-                <small class="form-text text-muted">Endpoint for your local Ollama instance.</small>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Model Name</label>
-                <input type="text" name="llm_model" class="form-control" value="{{ config.llm_model or 'gemini-2.5-flash' }}">
-                <small class="form-text text-muted">The specific model identifier (e.g. gpt-4o, llama3).</small>
-            </div>
         </div>
     </div>
 
     <div class="card mb-3">
-        <div class="card-header bg-secondary text-white">System Settings</div>
+        <div class="card-header bg-dark text-white">System Settings</div>
         <div class="card-body">
             <div class="form-check form-switch mb-2">
                 <input class="form-check-input" type="checkbox" name="archive_zip" id="archive_zip" {% if config.archive_zip %}checked{% endif %}>
@@ -254,7 +271,7 @@
         </div>
     </div>
     
-    <button type="submit" class="btn btn-primary btn-lg w-100">Save Settings</button>
+    <button type="submit" class="btn btn-primary btn-lg w-100 mb-5">Save Settings</button>
 </form>
 
 <script>
@@ -276,19 +293,6 @@
             input.type = "password";
         }
     }
-    
-    function toggleProviderSettings() {
-        const provider = document.querySelector('select[name="llm_provider"]').value;
-        const urlGroup = document.getElementById('ollama-url-group');
-        
-        if (provider === 'Ollama') {
-            urlGroup.style.display = 'block';
-        } else {
-            urlGroup.style.display = 'none';
-        }
-    }
-    
-    toggleProviderSettings();
     
     document.addEventListener('DOMContentLoaded', toggleDbFields);
 </script>
