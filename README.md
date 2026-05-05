@@ -21,6 +21,25 @@ The workflow is designed to be as automated as possible. The entire pipeline run
 2. **Upload Audio**: After the session, you download the multi-track FLAC `.zip` file from Craig and upload it via the Scribble Web UI.
 > [!NOTE]
 > **It must be the mult-track FLAC recording**
+>
+> To repack from a craig audacity pack:
+>
+>* Open zip file (if you dont have it unziped already)
+>* Go into the zip files data folder [**********_data]
+>* Extract the *.ogg files and info.txt into a temp folder
+>
+>* Convert all the *.ogg to *.flac using a converting tool like VERT, FFMPG or VLC.
+>* Zip the .flac files together with the info.txt
+>	** If using VERT you can batch process all files and download all as ZIP. Then open Zip file and add info.txt.
+>
+>* Upload to Scribble
+>
+>Additional tips: 
+>* You can rename the zip-file to session number and an episode title, when downloading the transcript the name of the zipfile will be the transcript name. 
+>* If you omitt the info.txt you'll loose some meta data, like speakers and date of recording. But the file will still process. 
+>* If you lack an info.txt you can copy an info.txt from another file, correct the date and speakers then put it into the zip-file in order to get correct meta data.
+
+* If you lack a multitrack of the session you can zip and upload a single .flack-track. 
 3. **Transcribe (Local)**: Scribble takes the file, unzips it, and uses **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** to locally transcribe each player's audio track.
 4. **Summarize (AI)**: The individual transcripts are merged into a single, time-sorted master transcript. This transcript, along with a custom prompt, is sent to your LLM Provider of choice (or a local Ollama instance) to generate a narrative recap.
 5. **Deliver**: The AI's narrative recap is received, formatted, and posted to Discord. Optionally, you can have the recap passed to a custom script for further processing.
