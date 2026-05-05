@@ -178,15 +178,11 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
 
-    parts = [
-        {"text": f"The following file is the session transcript ({os.path.basename(transcript_path)}):"},
-        {"inlineData": {"mimeType": "text/plain", "data": encoded_file}}
-    ]
+    parts = [{"inlineData": {"mimeType": "text/plain", "data": encoded_file}}]
 
     if recap_context_path:
         with open(recap_context_path, "rb") as f:
             encoded_recap = base64.b64encode(f.read()).decode('utf-8')
-        parts.append({"text": "The following file contains previous session recaps (previous_recaps.txt):"})
         parts.append({"inlineData": {"mimeType": "text/plain", "data": encoded_recap}})
 
     parts.append({"text": prompt})
