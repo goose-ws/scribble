@@ -38,8 +38,8 @@ The workflow is designed to be as automated as possible. The entire pipeline run
 >* You can rename the zip-file to session number and an episode title, when downloading the transcript the name of the zipfile will be the transcript name. 
 >* If you omitt the info.txt you'll loose some meta data, like speakers and date of recording. But the file will still process. 
 >* If you lack an info.txt you can copy an info.txt from another file, correct the date and speakers then put it into the zip-file in order to get correct meta data.
-
-* If you lack a multitrack of the session you can zip and upload a single .flack-track. 
+>* If you lack a multitrack of the session you can zip and upload a single .flack-track.
+ 
 3. **Transcribe (Local)**: Scribble takes the file, unzips it, and uses **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** to locally transcribe each player's audio track.
 4. **Summarize (AI)**: The individual transcripts are merged into a single, time-sorted master transcript. This transcript, along with a custom prompt, is sent to your LLM Provider of choice (or a local Ollama instance) to generate a narrative recap.
 5. **Deliver**: The AI's narrative recap is received, formatted, and posted to Discord. Optionally, you can have the recap passed to a custom script for further processing.
