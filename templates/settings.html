@@ -202,23 +202,23 @@
                 <div class="card-body">
                     <div class="mb-3">
                         <label class="form-label">Default LLM Provider</label>
-                        <select name="default_llm_provider" class="form-select">
-                            <option value="Google" {% if config.default_llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
-                            <option value="OpenAI" {% if config.default_llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
-                            <option value="Anthropic" {% if config.default_llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
-                            <option value="Ollama" {% if config.default_llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
+                        <select name="llm_provider" class="form-select">
+                            <option value="Google" {% if config.llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
+                            <option value="OpenAI" {% if config.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                            <option value="Anthropic" {% if config.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                            <option value="Ollama" {% if config.llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
                         </select>
                         <small class="form-text text-muted">The AI service used by default if a campaign doesn't override it.</small>
                     </div>
         
                     <div class="mb-3">
                         <label class="form-label">Default Model Name</label>
-                        <input type="text" name="default_llm_model" class="form-control" value="{{ config.default_llm_model or 'gemini-2.5-flash' }}">
-                        <small class="form-text text-muted">The specific model identifier used by the Default Provider (e.g. gpt-4o, llama3).</small>
+                        <input type="text" name="llm_model" class="form-control" value="{{ config.llm_model or 'gemini-2.5-flash' }}">
+                        <small class="form-text text-muted">The specific model identifier used by the Default Provider (e.g. gemini-2.5-flash, claude-sonnet-4-5, gpt-4o, llama3).</small>
                     </div>
 
                     <hr>
-                    <h6 class="text-muted mb-3">API Keys & Endpoints</h6>
+                    <h6 class="text-muted mb-3">API Keys &amp; Endpoints</h6>
         
                     <div class="mb-3">
                         <label class="form-label">Google API Key</label>
@@ -239,6 +239,47 @@
                         <label class="form-label">Ollama URL</label>
                         <input type="text" name="ollama_url" class="form-control form-control-sm" placeholder="http://ollama:11434" value="{{ config.ollama_url or '' }}">
                     </div>
+
+                    <hr>
+                    <h6 class="text-muted mb-1">Token Costs (per million tokens)</h6>
+                    <small class="text-muted d-block mb-3">
+                        Used for cost estimation on the dashboard. Set to <code>0</code> if you don't want cost tracking for a provider.
+                        These are the defaults; individual campaigns can override them.
+                    </small>
+
+                    {% set providers = [
+                        ('Google',    'google',    'bg-success'),
+                        ('OpenAI',    'openai',    'bg-primary'),
+                        ('Anthropic', 'anthropic', 'bg-warning text-dark'),
+                        ('Ollama',    'ollama',    'bg-secondary')
+                    ] %}
+                    {% for provider_name, provider_key, badge_class in providers %}
+                    <div class="card bg-light border-0 mb-2">
+                        <div class="card-body py-2 px-3">
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="badge {{ badge_class }} me-2">{{ provider_name }}</span>
+                                <span class="small text-muted">Cost per million tokens</span>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label small mb-1">Input ($/M)</label>
+                                    <input type="number" step="0.01" min="0"
+                                           name="llm_cost_{{ provider_key }}_input"
+                                           class="form-control form-control-sm"
+                                           value="{{ config.llm_costs.get(provider_name, {}).get('input', 0.0) }}">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small mb-1">Output ($/M)</label>
+                                    <input type="number" step="0.01" min="0"
+                                           name="llm_cost_{{ provider_key }}_output"
+                                           class="form-control form-control-sm"
+                                           value="{{ config.llm_costs.get(provider_name, {}).get('output', 0.0) }}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
                 </div>
             </div>
 

@@ -6,9 +6,12 @@ from datetime import datetime
 from faster_whisper import WhisperModel
 from database import db
 from models import Session, Job, Transcript
+from config import get_effective_config
 from sqlalchemy import text
 
+
 # --- Custom Log Handler ---
+
 class DBLogHandler(logging.Handler):
     def __init__(self, job_id, app):
         super().__init__()
@@ -27,16 +30,21 @@ class DBLogHandler(logging.Handler):
             except Exception:
                 pass
 
+
 # Helper to format seconds
 def format_timestamp(seconds):
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     return "{:02d}:{:02d}:{:02d}".format(int(h), int(m), int(s))
 
+
 def run_transcription(job, config, app):
     session = Session.query.get(job.session_id)
     if not session:
         raise Exception("Session not found")
+
+    # Resolve effective config: campaign overrides take precedence over globals
+    effective = get_effective_config(config, session.campaign)
 
     # 1. Setup Logging
     db_handler = DBLogHandler(job.id, app)
@@ -51,13 +59,23 @@ def run_transcription(job, config, app):
     target_user = getattr(job, 'target_user', None)
 
     # 2. Configure Environment
-    hf_token = config.get('hf_token')
-    if hf_token: os.environ["HF_TOKEN"] = hf_token
+    hf_token = config.get('hf_token')  # hf_token is global-only, never overridden per campaign
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
 
-    # 3. Initialize Whisper
-    device = config.get('device', 'cuda')
-    compute_type = config.get('whisper_compute_type', 'int8')
-    model_size = config.get('whisper_model', 'small')
+    # 3. Initialize Whisper (uses effective config)
+    device = effective.get('device', 'cuda')
+    compute_type = effective.get('whisper_compute_type', 'int8')
+    model_size = effective.get('whisper_model', 'small')
+
+    # Log if campaign is overriding any whisper settings
+    campaign = session.campaign
+    if campaign and any(
+        getattr(campaign, f, None) is not None
+        for f in ('whisper_model', 'whisper_compute_type', 'whisper_language',
+                  'whisper_beam_size', 'vad_onset', 'vad_offset', 'vad_method')
+    ):
+        job.logs += f"\n[Config] Using campaign-level overrides for transcription settings."
 
     try:
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
@@ -81,7 +99,7 @@ def run_transcription(job, config, app):
         filename = os.path.basename(file_path)
         try:
             username = filename.split('-', 1)[1].rsplit('.', 1)[0]
-        except:
+        except Exception:
             username = "Unknown"
 
         if target_user and username != target_user:
@@ -96,18 +114,12 @@ def run_transcription(job, config, app):
         try:
             segments, info = model.transcribe(
                 file_path,
-                beam_size=config.get('whisper_beam_size', 5),
-                language=config.get('whisper_language', 'en'),
-                initial_prompt=config.get('whisper_initial_prompt') or None,
-                condition_on_previous_text=config.get('whisper_condition_on_previous_text', True),
-                no_speech_threshold=config.get('whisper_no_speech_threshold', 0.45),
-                compression_ratio_threshold=config.get('whisper_compression_ratio_threshold', 1.8),
+                beam_size=effective.get('whisper_beam_size', 5),
+                language=effective.get('whisper_language', 'en'),
                 vad_filter=True,
                 vad_parameters=dict(
-                    threshold=config.get('vad_onset', 0.5),
-                    neg_threshold=config.get('vad_offset', 0.363),
-                    min_silence_duration_ms=config.get('vad_min_silence_ms', 1000),
-                    max_speech_duration_s=config.get('vad_max_speech_s', 20.0),
+                    min_silence_duration_ms=500,
+                    threshold=effective.get('vad_onset', 0.5)
                 )
             )
 
@@ -124,13 +136,14 @@ def run_transcription(job, config, app):
             # Save to Disk
             transcript_dir = os.path.join(session.directory_path, "transcripts")
             os.makedirs(transcript_dir, exist_ok=True)
-
             user_file_path = os.path.join(transcript_dir, f"{username}_transcript.txt")
             with open(user_file_path, 'w', encoding='utf-8') as f:
                 f.write(user_full_text)
 
             # Save to DB
-            existing_transcript = Transcript.query.filter_by(session_id=session.id, username=username).first()
+            existing_transcript = Transcript.query.filter_by(
+                session_id=session.id, username=username
+            ).first()
             if existing_transcript:
                 existing_transcript.content = user_full_text
             else:
@@ -153,7 +166,6 @@ def run_transcription(job, config, app):
 
     # 6. Cleanup & Save Master
     fw_logger.removeHandler(db_handler)
-
     master_transcript.sort(key=lambda x: x[0])
     final_text = "\n".join([x[1] for x in master_transcript])
 
@@ -162,9 +174,7 @@ def run_transcription(job, config, app):
         f.write(final_text)
 
     job.logs += f"\nMaster transcript saved to: {transcript_path}"
-
     session.transcript_text = final_text
     db.session.commit()
 
     return True
-

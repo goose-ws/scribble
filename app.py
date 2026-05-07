@@ -249,6 +249,21 @@ def settings():
         config['archive_zip'] = 'archive_zip' in request.form
         config['db_space_saver'] = 'db_space_saver' in request.form
 
+        # Handle per-provider token costs
+        llm_costs = config.get('llm_costs', {})
+        for provider, key in [('Google', 'google'), ('OpenAI', 'openai'), ('Anthropic', 'anthropic'), ('Ollama', 'ollama')]:
+            input_val = request.form.get(f'llm_cost_{key}_input')
+            output_val = request.form.get(f'llm_cost_{key}_output')
+            if provider not in llm_costs:
+                llm_costs[provider] = {}
+            if input_val is not None:
+                try: llm_costs[provider]['input'] = float(input_val)
+                except (ValueError, TypeError): pass
+            if output_val is not None:
+                try: llm_costs[provider]['output'] = float(output_val)
+                except (ValueError, TypeError): pass
+        config['llm_costs'] = llm_costs
+
         save_config(config)
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings'))
@@ -275,11 +290,18 @@ def campaigns():
         script_paths_str = ",".join(selected_scripts)
 
         # Handle LLM overrides
-        llm_prov = request.form.get('llm_provider')
-        if llm_prov == 'Default': llm_prov = None
+        llm_prov = request.form.get('llm_provider') or None
         
         llm_mod = request.form.get('llm_model')
         if not llm_mod: llm_mod = None
+
+        def _nstr(val): return val.strip() if val and val.strip() else None
+        def _nint(val):
+            try: return int(val) if val and val.strip() else None
+            except (ValueError, TypeError): return None
+        def _nfloat(val):
+            try: return float(val) if val and val.strip() else None
+            except (ValueError, TypeError): return None
 
         new_campaign = Campaign(
             name=name,
@@ -289,7 +311,19 @@ def campaigns():
             recap_context_enabled='recap_context_enabled' in request.form,
             recap_context_count=int(request.form.get('recap_context_count') or 3),
             llm_provider=llm_prov,
-            llm_model=llm_mod
+            llm_model=llm_mod,
+            llm_input_cost=_nfloat(request.form.get('llm_input_cost')),
+            llm_output_cost=_nfloat(request.form.get('llm_output_cost')),
+            whisper_model=_nstr(request.form.get('whisper_model')),
+            whisper_threads=_nint(request.form.get('whisper_threads')),
+            whisper_batch_size=_nint(request.form.get('whisper_batch_size')),
+            whisper_beam_size=_nint(request.form.get('whisper_beam_size')),
+            whisper_compute_type=_nstr(request.form.get('whisper_compute_type')),
+            whisper_language=_nstr(request.form.get('whisper_language')),
+            whisper_initial_prompt=_nstr(request.form.get('whisper_initial_prompt')),
+            vad_method=_nstr(request.form.get('vad_method')),
+            vad_onset=_nfloat(request.form.get('vad_onset')),
+            vad_offset=_nfloat(request.form.get('vad_offset')),
         )
         try:
             db.session.add(new_campaign)
@@ -333,10 +367,31 @@ def edit_campaign(id):
 
         # Handle LLM overrides
         llm_prov = request.form.get('llm_provider')
-        campaign.llm_provider = None if llm_prov == 'Default' else llm_prov
+        campaign.llm_provider = llm_prov or None
         
         llm_mod = request.form.get('llm_model')
         campaign.llm_model = llm_mod if llm_mod else None
+
+        def _nstr(val): return val.strip() if val and val.strip() else None
+        def _nint(val):
+            try: return int(val) if val and val.strip() else None
+            except (ValueError, TypeError): return None
+        def _nfloat(val):
+            try: return float(val) if val and val.strip() else None
+            except (ValueError, TypeError): return None
+
+        campaign.llm_input_cost        = _nfloat(request.form.get('llm_input_cost'))
+        campaign.llm_output_cost       = _nfloat(request.form.get('llm_output_cost'))
+        campaign.whisper_model         = _nstr(request.form.get('whisper_model'))
+        campaign.whisper_threads       = _nint(request.form.get('whisper_threads'))
+        campaign.whisper_batch_size    = _nint(request.form.get('whisper_batch_size'))
+        campaign.whisper_beam_size     = _nint(request.form.get('whisper_beam_size'))
+        campaign.whisper_compute_type  = _nstr(request.form.get('whisper_compute_type'))
+        campaign.whisper_language      = _nstr(request.form.get('whisper_language'))
+        campaign.whisper_initial_prompt = _nstr(request.form.get('whisper_initial_prompt'))
+        campaign.vad_method            = _nstr(request.form.get('vad_method'))
+        campaign.vad_onset             = _nfloat(request.form.get('vad_onset'))
+        campaign.vad_offset            = _nfloat(request.form.get('vad_offset'))
 
         should_be_default = 'is_default' in request.form
 

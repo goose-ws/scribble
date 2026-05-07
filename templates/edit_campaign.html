@@ -18,21 +18,6 @@
                     <input type="text" name="discord_webhook" class="form-control" value="{{ campaign.discord_webhook or '' }}">
                 </div>
 
-                <div class="col-md-6 mb-3">
-                    <label class="form-label fw-bold text-primary">LLM Provider Override</label>
-                    <select name="llm_provider" class="form-select border-primary">
-                        <option value="Default" {% if not campaign.llm_provider %}selected{% endif %}>-- Inherit Global Default --</option>
-                        <option value="Google" {% if campaign.llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
-                        <option value="OpenAI" {% if campaign.llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
-                        <option value="Anthropic" {% if campaign.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
-                        <option value="Ollama" {% if campaign.llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
-                    </select>
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label class="form-label fw-bold text-primary">LLM Model Override</label>
-                    <input type="text" name="llm_model" class="form-control border-primary" value="{{ campaign.llm_model or '' }}" placeholder="Leave blank to use global default">
-                </div>
-                
                 <div class="mb-3">
                     <label for="system_prompt" class="form-label fw-bold">System Prompt</label>
                     <textarea class="form-control" id="system_prompt" name="system_prompt" rows="14">{{ campaign.system_prompt or '' }}</textarea>
@@ -69,7 +54,141 @@
                     </div>
                 </div>
             </div>
-            
+
+            <!-- LLM Overrides -->
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <i class="bi bi-cpu"></i> LLM Overrides
+                    <small class="ms-2 opacity-75">Leave blank to inherit global settings</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Provider</label>
+                            <select name="llm_provider" class="form-select">
+                                <option value="" {% if not campaign.llm_provider %}selected{% endif %}>— Inherit Global ({{ config.llm_provider }}) —</option>
+                                <option value="Google"    {% if campaign.llm_provider == 'Google'    %}selected{% endif %}>Google (Gemini)</option>
+                                <option value="OpenAI"    {% if campaign.llm_provider == 'OpenAI'    %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                                <option value="Anthropic" {% if campaign.llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                                <option value="Ollama"    {% if campaign.llm_provider == 'Ollama'    %}selected{% endif %}>Local (Ollama)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Model</label>
+                            <input type="text" name="llm_model" class="form-control"
+                                   value="{{ campaign.llm_model or '' }}"
+                                   placeholder="Inherit global ({{ config.llm_model }})">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Input Cost ($/M tokens)</label>
+                            <input type="number" step="0.01" min="0" name="llm_input_cost" class="form-control"
+                                   value="{{ campaign.llm_input_cost if campaign.llm_input_cost is not none else '' }}"
+                                   placeholder="Inherit from provider default">
+                            <div class="form-text">Override the per-million input token cost for this campaign.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Output Cost ($/M tokens)</label>
+                            <input type="number" step="0.01" min="0" name="llm_output_cost" class="form-control"
+                                   value="{{ campaign.llm_output_cost if campaign.llm_output_cost is not none else '' }}"
+                                   placeholder="Inherit from provider default">
+                            <div class="form-text">Override the per-million output token cost for this campaign.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Whisper Overrides -->
+            <div class="card mb-3 border-secondary">
+                <div class="card-header bg-secondary text-white">
+                    <i class="bi bi-mic"></i> Whisper Overrides
+                    <small class="ms-2 opacity-75">Leave blank to inherit global settings</small>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Model</label>
+                            <input type="text" name="whisper_model" class="form-control"
+                                   value="{{ campaign.whisper_model or '' }}"
+                                   placeholder="Inherit global ({{ config.whisper_model }})">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Language Code</label>
+                            <input type="text" name="whisper_language" class="form-control"
+                                   value="{{ campaign.whisper_language or '' }}"
+                                   placeholder="Inherit global ({{ config.whisper_language }})">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Threads</label>
+                            <input type="number" name="whisper_threads" class="form-control"
+                                   value="{{ campaign.whisper_threads if campaign.whisper_threads is not none else '' }}"
+                                   placeholder="{{ config.whisper_threads }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Batch Size</label>
+                            <input type="number" name="whisper_batch_size" class="form-control"
+                                   value="{{ campaign.whisper_batch_size if campaign.whisper_batch_size is not none else '' }}"
+                                   placeholder="{{ config.whisper_batch_size }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Beam Size</label>
+                            <input type="number" name="whisper_beam_size" class="form-control"
+                                   value="{{ campaign.whisper_beam_size if campaign.whisper_beam_size is not none else '' }}"
+                                   placeholder="{{ config.whisper_beam_size }}">
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Compute Type</label>
+                            <select name="whisper_compute_type" class="form-select">
+                                <option value="" {% if not campaign.whisper_compute_type %}selected{% endif %}>— Inherit Global ({{ config.whisper_compute_type }}) —</option>
+                                <option value="float16" {% if campaign.whisper_compute_type == 'float16' %}selected{% endif %}>float16</option>
+                                <option value="float32" {% if campaign.whisper_compute_type == 'float32' %}selected{% endif %}>float32</option>
+                                <option value="int8"    {% if campaign.whisper_compute_type == 'int8'    %}selected{% endif %}>int8</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Initial Prompt</label>
+                            <input type="text" name="whisper_initial_prompt" class="form-control"
+                                   value="{{ campaign.whisper_initial_prompt or '' }}"
+                                   placeholder="Inherit global ({{ config.whisper_initial_prompt or 'none' }})">
+                            <div class="form-text">Vocabulary hints fed to Whisper before transcription, e.g. proper nouns, character names.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VAD Overrides -->
+            <div class="card mb-3 border-info">
+                <div class="card-header bg-info text-white">
+                    <i class="bi bi-soundwave"></i> VAD Overrides
+                    <small class="ms-2 opacity-75">Leave blank to inherit global settings</small>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">VAD Method</label>
+                            <select name="vad_method" class="form-select">
+                                <option value="" {% if not campaign.vad_method %}selected{% endif %}>— Inherit Global ({{ config.vad_method }}) —</option>
+                                <option value="silero" {% if campaign.vad_method == 'silero' %}selected{% endif %}>Silero</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Onset Threshold</label>
+                            <input type="number" step="0.001" min="0" max="1" name="vad_onset" class="form-control"
+                                   value="{{ campaign.vad_onset if campaign.vad_onset is not none else '' }}"
+                                   placeholder="{{ config.vad_onset }}">
+                            <div class="form-text">Sensitivity to speech start (0–1).</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Offset Threshold</label>
+                            <input type="number" step="0.001" min="0" max="1" name="vad_offset" class="form-control"
+                                   value="{{ campaign.vad_offset if campaign.vad_offset is not none else '' }}"
+                                   placeholder="{{ config.vad_offset }}">
+                            <div class="form-text">Sensitivity to speech end (0–1).</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recap Context -->
             <div class="col-12 mb-4">
                 <div class="card bg-light border-0">
                     <div class="card-body py-2">
@@ -98,6 +217,7 @@
                 </div>
             </div>
 
+            <!-- Default Campaign -->
             <div class="col-12 mb-4">
                 <div class="card bg-light border-0">
                     <div class="card-body py-2">

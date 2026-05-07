@@ -13,14 +13,12 @@ DEFAULT_CONFIG = {
     "flask_secret_key": "",
     "archive_zip": False,
     "db_space_saver": True,
-
     # Database
     "db_type": "sqlite",
     "db_address": "",
     "db_name": "scribble",
     "db_username": "",
     "db_password": "",
-
     # Whisper
     "whisper_model": "small",
     "whisper_threads": 0,
@@ -28,89 +26,124 @@ DEFAULT_CONFIG = {
     "whisper_beam_size": 5,
     "whisper_compute_type": "int8",
     "whisper_language": "en",
-    "whisper_no_speech_threshold": 0.45,
-    "whisper_compression_ratio_threshold": 1.8,
-    "whisper_condition_on_previous_text": True,
     "whisper_initial_prompt": "",
     "hf_token": "",
-
     # VAD
     "vad_method": "silero",
     "vad_onset": 0.5,
     "vad_offset": 0.363,
-    "vad_min_silence_ms": 1000,
-    "vad_max_speech_s": 20.0,
-
-    # LLM Defaults and Keys
-    "default_llm_provider": "Google",
-    "default_llm_model": "gemini-2.5-flash",
+    # LLM
+    "llm_provider": "Google",
+    "llm_model": "gemini-2.5-flash",
     "google_api_key": "",
-    "openai_api_key": "",
     "anthropic_api_key": "",
+    "openai_api_key": "",
     "ollama_url": "",
-    "llm_input_cost": 0.0,
-    "llm_output_cost": 0.0
+    # Per-provider token costs (per million tokens)
+    "llm_costs": {
+        "Google":    {"input": 0.0, "output": 0.0},
+        "OpenAI":    {"input": 0.0, "output": 0.0},
+        "Anthropic": {"input": 0.0, "output": 0.0},
+        "Ollama":    {"input": 0.0, "output": 0.0}
+    }
 }
+
 
 def load_config():
     """Load config from disk, or create with defaults if missing."""
     if not os.path.exists('/data'):
         os.makedirs('/data', exist_ok=True)
-    
+
     config = DEFAULT_CONFIG.copy()
-    
+    # Deep-copy nested dicts so defaults are never mutated
+    config['llm_costs'] = {k: v.copy() for k, v in DEFAULT_CONFIG['llm_costs'].items()}
+
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, 'r') as f:
                 saved_config = json.load(f)
 
-            # --- MIGRATION BLOCK: Migrate old LLM Settings safely ---
-            if 'llm_provider' in saved_config:
-                old_prov = saved_config.pop('llm_provider')
-                if old_prov == 'Local': old_prov = 'Ollama'
-                saved_config['default_llm_provider'] = old_prov
-            
-            if 'llm_model' in saved_config:
-                saved_config['default_llm_model'] = saved_config.pop('llm_model')
-            
-            if 'llm_api_key' in saved_config:
-                old_key = saved_config.pop('llm_api_key')
-                old_prov = saved_config.get('default_llm_provider', 'Google')
-                if old_prov == 'Google' and 'google_api_key' not in saved_config:
-                    saved_config['google_api_key'] = old_key
-                elif old_prov == 'OpenAI' and 'openai_api_key' not in saved_config:
-                    saved_config['openai_api_key'] = old_key
-                elif old_prov == 'Anthropic' and 'anthropic_api_key' not in saved_config:
-                    saved_config['anthropic_api_key'] = old_key
+            # ------------------------------------------------------------------
+            # Forward-migrations from older config formats
+            # ------------------------------------------------------------------
 
+            # 1. Single llm_api_key -> per-provider key
+            if saved_config.get('llm_api_key'):
+                old_provider = saved_config.get('llm_provider', 'Google')
+                key_map = {
+                    'Google':    'google_api_key',
+                    'OpenAI':    'openai_api_key',
+                    'Anthropic': 'anthropic_api_key',
+                }
+                target = key_map.get(old_provider)
+                if target and not saved_config.get(target):
+                    saved_config[target] = saved_config['llm_api_key']
+                    logging.info(f"Config migration: llm_api_key -> {target}")
+
+            # 2. Flat llm_input_cost / llm_output_cost -> llm_costs dict
+            if 'llm_input_cost' in saved_config or 'llm_output_cost' in saved_config:
+                old_provider = saved_config.get('llm_provider', 'Google')
+                if 'llm_costs' not in saved_config:
+                    saved_config['llm_costs'] = {
+                        k: v.copy() for k, v in DEFAULT_CONFIG['llm_costs'].items()
+                    }
+                if old_provider in saved_config['llm_costs']:
+                    if 'llm_input_cost' in saved_config:
+                        saved_config['llm_costs'][old_provider]['input'] = float(
+                            saved_config['llm_input_cost']
+                        )
+                    if 'llm_output_cost' in saved_config:
+                        saved_config['llm_costs'][old_provider]['output'] = float(
+                            saved_config['llm_output_cost']
+                        )
+                    logging.info(
+                        f"Config migration: llm_input/output_cost -> llm_costs[{old_provider}]"
+                    )
+
+            # ------------------------------------------------------------------
+            # Merge llm_costs carefully: saved values win, but any provider
+            # missing from the saved dict gets the default (handles new providers
+            # added in future versions).
+            # ------------------------------------------------------------------
+            if 'llm_costs' in saved_config:
+                merged_costs = {k: v.copy() for k, v in DEFAULT_CONFIG['llm_costs'].items()}
+                for provider, costs in saved_config['llm_costs'].items():
+                    if provider in merged_costs:
+                        merged_costs[provider].update(costs)
+                    else:
+                        merged_costs[provider] = costs.copy()
+                config['llm_costs'] = merged_costs
+                del saved_config['llm_costs']
+
+            # Apply remaining saved values (flat keys only at this point)
             config.update(saved_config)
-            
-            # Cleanup deprecated keys
-            keys_to_remove = [k for k in config if k not in DEFAULT_CONFIG]
-            if keys_to_remove:
-                for k in keys_to_remove:
+
+            # Remove stale keys no longer in DEFAULT_CONFIG (keeps the file clean)
+            stale = [k for k in list(config.keys()) if k not in DEFAULT_CONFIG]
+            if stale:
+                for k in stale:
                     del config[k]
                 save_config(config)
-                
+
         except Exception as e:
             logging.error(f"Error loading config.json: {e}")
 
-    # Security: Generate WebUI Password if missing
+    # Security: generate WebUI password on first run
     if not config['webui_password']:
         temp_pass = secrets.token_urlsafe(12)
         config['webui_password'] = temp_pass
-        logging.warning("="*50)
+        logging.warning("=" * 50)
         logging.warning(f"FIRST RUN - TEMPORARY PASSWORD: {temp_pass}")
-        logging.warning("="*50)
+        logging.warning("=" * 50)
         save_config(config)
 
-    # Security: Generate Flask Secret Key if missing
+    # Security: generate Flask secret key if missing
     if not config['flask_secret_key']:
-        new_secret = secrets.token_hex(32)
-        config['flask_secret_key'] = new_secret
+        config['flask_secret_key'] = secrets.token_hex(32)
         save_config(config)
-        
+
     return config
+
 
 def save_config(config):
     """Save the current config to disk."""
@@ -119,3 +152,70 @@ def save_config(config):
             json.dump(config, f, indent=4)
     except Exception as e:
         logging.error(f"Error saving config.json: {e}")
+
+
+def get_effective_config(global_config, campaign):
+    """
+    Merge global config with campaign-level overrides.
+
+    Returns a new dict — global_config is never mutated.
+    Any campaign field that is None means "inherit from global".
+
+    The returned config always has flat `llm_input_cost` and `llm_output_cost`
+    keys resolved from the effective provider's llm_costs entry, so existing
+    code in llm_engine.py that calls calculate_cost() continues to work without
+    changes.
+    """
+    effective = global_config.copy()
+    # Deep-copy nested dicts so callers cannot accidentally mutate global state
+    if 'llm_costs' in effective:
+        effective['llm_costs'] = {
+            k: v.copy() for k, v in effective['llm_costs'].items()
+        }
+
+    if campaign is None:
+        _resolve_effective_costs(effective)
+        return effective
+
+    # --- Whisper overrides ---
+    for field in (
+        'whisper_model', 'whisper_threads', 'whisper_batch_size',
+        'whisper_beam_size', 'whisper_compute_type', 'whisper_language',
+    ):
+        val = getattr(campaign, field, None)
+        if val is not None:
+            effective[field] = val
+
+    # --- VAD overrides ---
+    for field in ('vad_method', 'vad_onset', 'vad_offset'):
+        val = getattr(campaign, field, None)
+        if val is not None:
+            effective[field] = val
+
+    # --- LLM overrides ---
+    if campaign.llm_provider:
+        effective['llm_provider'] = campaign.llm_provider
+    if campaign.llm_model:
+        effective['llm_model'] = campaign.llm_model
+
+    # --- Cost resolution (provider defaults first, then campaign override) ---
+    _resolve_effective_costs(effective)
+    if campaign.llm_input_cost is not None:
+        effective['llm_input_cost'] = campaign.llm_input_cost
+    if campaign.llm_output_cost is not None:
+        effective['llm_output_cost'] = campaign.llm_output_cost
+
+    return effective
+
+
+def _resolve_effective_costs(effective):
+    """
+    Populate flat llm_input_cost / llm_output_cost on `effective` from the
+    llm_costs dict based on the currently active llm_provider.
+    Called internally by get_effective_config before campaign cost overrides
+    are applied.
+    """
+    provider = effective.get('llm_provider', 'Google')
+    provider_costs = effective.get('llm_costs', {}).get(provider, {})
+    effective['llm_input_cost'] = provider_costs.get('input', 0.0)
+    effective['llm_output_cost'] = provider_costs.get('output', 0.0)
