@@ -7,7 +7,7 @@ bcrypt==5.0.0
 requests==2.33.1
 Flask-SQLAlchemy==3.1.1
 pytz==2026.1.post1
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
 PyMySQL==1.1.2
 markdown==3.10.2
 xhtml2pdf==0.2.17
