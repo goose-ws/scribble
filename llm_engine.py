@@ -263,43 +263,52 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
         "messages": [{"role": "user", "content": content}]
     }
     
-    start_time = time.time()
-    response = requests.post(msg_url, headers=headers, json=payload)
-    duration = time.time() - start_time
-    
-    res_json = response.json()
-    
-    usage = {
-        'prompt': res_json.get('usage', {}).get('input_tokens', 0),
-        'completion': res_json.get('usage', {}).get('output_tokens', 0),
-    }
-    usage['total'] = usage['prompt'] + usage['completion']
-    usage['cost'] = calculate_cost(usage['prompt'], usage['completion'], config)
-    
-    content_list = res_json.get('content', [])
-    full_text = "".join([c['text'] for c in content_list if c['type'] == 'text'])
-    finish_reason = res_json.get('stop_reason', 'unknown')
+    try:
+        start_time = time.time()
+        response = requests.post(msg_url, headers=headers, json=payload)
+        duration = time.time() - start_time
 
-    log_llm_request('Anthropic', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+        res_json = response.json()
 
-    if response.status_code != 200:
-        raise Exception(f"Anthropic API Error: {response.text}")
+        usage = {
+            'prompt': res_json.get('usage', {}).get('input_tokens', 0),
+            'completion': res_json.get('usage', {}).get('output_tokens', 0),
+        }
+        usage['total'] = usage['prompt'] + usage['completion']
+        usage['cost'] = calculate_cost(usage['prompt'], usage['completion'], config)
 
-    stats = {
-        'provider': 'Anthropic',
-        'model': model,
-        'duration': duration,
-        'tokens': usage
-    }
-    return full_text, stats
+        content_list = res_json.get('content', [])
+        full_text = "".join([c['text'] for c in content_list if c['type'] == 'text'])
+        finish_reason = res_json.get('stop_reason', 'unknown')
+
+        log_llm_request('Anthropic', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+
+        if response.status_code != 200:
+            raise Exception(f"Anthropic API Error: {response.text}")
+
+        stats = {
+            'provider': 'Anthropic',
+            'model': model,
+            'duration': duration,
+            'tokens': usage
+        }
+        return full_text, stats
+
+    finally:
+        # Clean up uploaded files from Anthropic's servers
+        for file_id in filter(None, [file_id, recap_file_id]):
+            try:
+                requests.delete(f"{files_url}/{file_id}", headers=headers, timeout=10)
+            except Exception:
+                pass
 
 def send_openai(prompt, transcript_path, config, recap_context_path=None):
     api_key = config.get('openai_api_key')
     if not api_key:
         raise Exception("OpenAI API Key is missing. Please configure it in Settings.")
-        
+
     model = config['active_llm_model']
-    
+
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
 
@@ -336,28 +345,35 @@ def send_openai(prompt, transcript_path, config, recap_context_path=None):
     start_time = time.time()
     response = requests.post(url, headers=headers, json=payload)
     duration = time.time() - start_time
-    
+
     res_json = response.json()
-    
+
+    # Responses API uses input_tokens/output_tokens, not prompt_tokens/completion_tokens
     usage_data = res_json.get('usage', {})
     usage = {
-        'prompt': usage_data.get('prompt_tokens', 0),
-        'completion': usage_data.get('completion_tokens', 0),
+        'prompt': usage_data.get('input_tokens', 0),
+        'completion': usage_data.get('output_tokens', 0),
         'total': usage_data.get('total_tokens', 0)
     }
     usage['cost'] = calculate_cost(usage['prompt'], usage['completion'], config)
-    
+
+    # Responses API returns output_text as a convenience field;
+    # fall back to walking the output array if it's absent
     full_text = res_json.get('output_text', '')
     if not full_text:
-        full_text = res_json.get('choices', [{}])[0].get('message', {}).get('content', '')
+        for item in res_json.get('output', []):
+            for part in item.get('content', []):
+                if part.get('type') == 'output_text':
+                    full_text += part.get('text', '')
 
-    finish_reason = res_json.get('choices', [{}])[0].get('finish_reason', 'unknown')
+    # Responses API uses top-level 'status', not choices[].finish_reason
+    finish_reason = res_json.get('status', 'unknown')
 
     log_llm_request('OpenAI', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
-    
+
     if response.status_code != 200:
         raise Exception(f"OpenAI API Error: {response.text}")
-        
+
     stats = {
         'provider': 'OpenAI',
         'model': model,
@@ -493,9 +509,9 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
 # --- MAIN ENGINE ENTRY ---
 def run_summary(job, config, post_to_discord_enabled=True):
     session = Session.query.get(job.session_id)
-    
+
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
-    
+
     if not os.path.exists(transcript_path):
         if session.transcript_text:
             os.makedirs(session.directory_path, exist_ok=True)
@@ -503,59 +519,96 @@ def run_summary(job, config, post_to_discord_enabled=True):
                 f.write(session.transcript_text)
             job.logs += "\n[System] Restored transcript file from database."
         else:
-             raise Exception("Transcript file not found (Disk or DB).")
+            raise Exception("Transcript file not found (Disk or DB).")
 
-    prompt = session.campaign.system_prompt
-    if not prompt:
-        prompt = "Summarize this DnD session."
-        
-    template = Template(prompt)
-    
-    target_tz_str = os.environ.get('TZ', 'UTC')
-    try:
-        local_tz = pytz.timezone(target_tz_str)
-        utc_dt = session.session_date.replace(tzinfo=pytz.utc)
-        local_dt = utc_dt.astimezone(local_tz)
-        formatted_date = local_dt.strftime("%B %-d, %Y")
-    except Exception:
-        formatted_date = session.session_date.strftime("%B %d, %Y")
+    from app import apply_transcript_options
+    with open(transcript_path, 'r', encoding='utf-8', errors='replace') as f:
+        raw_transcript = f.read()
 
-    prompt = template.safe_substitute(
-        campaignName=session.campaign.name,
-        sessionNumber=session.session_number,
-        sessionDate=formatted_date
-    )
-    
-    # Allow Campaigns to Override Default LLM
-    effective_provider = session.campaign.llm_provider or config.get('default_llm_provider', 'Google')
-    effective_model = session.campaign.llm_model or config.get('default_llm_model', 'gemini-2.5-flash')
-    
-    config['active_llm_provider'] = effective_provider
-    config['active_llm_model'] = effective_model
-    
-    provider = effective_provider
-    job.logs += f"\nStarting Summary with {provider} ({effective_model})..."
+    processed_transcript = apply_transcript_options(raw_transcript, session.campaign)
 
+    effective_transcript_path = None  # initialized here so finally can always reference it
     recap_context_path = None
-    try:
-        recap_context_path = build_recap_context_file(session, config)
-        if recap_context_path:
-            job.logs += "\nRecap context file built — attaching previous recaps."
-    except Exception as e:
-        logging.warning(f"Failed to build recap context: {e}")
-        job.logs += f"\nWarning: Could not build recap context ({e}). Continuing without it."
 
     try:
-        if provider == 'Google':
-            summary, stats = send_google(prompt, transcript_path, config, recap_context_path)
-        elif provider == 'Anthropic':
-            summary, stats = send_anthropic(prompt, transcript_path, config, recap_context_path)
-        elif provider == 'OpenAI':
-            summary, stats = send_openai(prompt, transcript_path, config, recap_context_path)
-        elif provider == 'Ollama':
-            summary, stats = send_ollama(prompt, transcript_path, config, recap_context_path)
+        if processed_transcript != raw_transcript:
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.txt', encoding='utf-8', delete=False
+            )
+            tmp.write(processed_transcript)
+            tmp.close()
+            effective_transcript_path = tmp.name
+            job.logs += "\n[System] Transcript processing applied (rename/timestamps/consolidation)."
         else:
-            raise Exception(f"Unknown Provider: {provider}")
+            effective_transcript_path = transcript_path
+
+        prompt = session.campaign.system_prompt
+        if not prompt:
+            prompt = "Summarize this DnD session."
+
+        template = Template(prompt)
+
+        target_tz_str = os.environ.get('TZ', 'UTC')
+        try:
+            local_tz = pytz.timezone(target_tz_str)
+            utc_dt = session.session_date.replace(tzinfo=pytz.utc)
+            local_dt = utc_dt.astimezone(local_tz)
+            formatted_date = local_dt.strftime("%B %-d, %Y")
+        except Exception:
+            formatted_date = session.session_date.strftime("%B %d, %Y")
+
+        prompt = template.safe_substitute(
+            campaignName=session.campaign.name,
+            sessionNumber=session.session_number,
+            sessionDate=formatted_date
+        )
+
+        effective_provider = session.campaign.llm_provider or config.get('llm_provider', 'Google')
+        effective_model = session.campaign.llm_model or config.get('llm_model', 'gemini-2.5-flash')
+
+        config['active_llm_provider'] = effective_provider
+        config['active_llm_model'] = effective_model
+
+        provider = effective_provider
+        job.logs += f"\nStarting Summary with {provider} ({effective_model})..."
+
+        try:
+            recap_context_path = build_recap_context_file(session, config)
+            if recap_context_path:
+                job.logs += "\nRecap context file built — attaching previous recaps."
+        except Exception as e:
+            logging.warning(f"Failed to build recap context: {e}")
+            job.logs += f"\nWarning: Could not build recap context ({e}). Continuing without it."
+
+        RETRYABLE = ('503', '429', 'UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'Too Many Requests', 'overloaded')
+        RETRY_DELAYS = [60, 300, 600, 900, 1200]
+        MAX_RETRIES = 5
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                if provider == 'Google':
+                    summary, stats = send_google(prompt, effective_transcript_path, config, recap_context_path)
+                elif provider == 'Anthropic':
+                    summary, stats = send_anthropic(prompt, effective_transcript_path, config, recap_context_path)
+                elif provider == 'OpenAI':
+                    summary, stats = send_openai(prompt, effective_transcript_path, config, recap_context_path)
+                elif provider == 'Ollama':
+                    summary, stats = send_ollama(prompt, effective_transcript_path, config, recap_context_path)
+                else:
+                    raise Exception(f"Unknown Provider: {provider}")
+                break  # success — exit retry loop
+
+            except Exception as e:
+                err_str = str(e)
+                is_retryable = any(code in err_str for code in RETRYABLE)
+                if is_retryable and attempt < MAX_RETRIES:
+                    delay = RETRY_DELAYS[attempt - 1]
+                    job.logs += f"\n[Retry {attempt}/{MAX_RETRIES}] Transient error, waiting {delay}s before retry...\n  → {err_str[:300]}"
+                    db.session.commit()
+                    time.sleep(delay)
+                else:
+                    raise
 
         target_tz_str = os.environ.get('TZ', 'UTC')
         try:
@@ -575,19 +628,19 @@ def run_summary(job, config, post_to_discord_enabled=True):
             f"⌚ API time: `{format_duration(stats['duration'])}`\n"
             f"🧾 Tokens: `{tokens['prompt']} in | {tokens['completion']} out | {tokens['total']} total`\n\n"
         )
-        
+
         raw_content = header + summary
         final_content = clean_markdown(raw_content)
 
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
         with open(recap_path, 'w', encoding='utf-8') as f:
             f.write(final_content)
-        
+
         session.summary_text = final_content
         db.session.commit()
-        
+
         job.logs += "\nSummary generated successfully."
-        
+
         if post_to_discord_enabled:
             if session.campaign.discord_webhook:
                 job.logs += "\nSending to Discord..."
@@ -601,10 +654,16 @@ def run_summary(job, config, post_to_discord_enabled=True):
     except Exception as e:
         job.logs += f"\nLLM Error: {str(e)}"
         raise e
+
     finally:
         if recap_context_path and os.path.exists(recap_context_path):
             try:
                 os.unlink(recap_context_path)
+            except Exception:
+                pass
+        if effective_transcript_path and effective_transcript_path != transcript_path:
+            try:
+                os.unlink(effective_transcript_path)
             except Exception:
                 pass
 

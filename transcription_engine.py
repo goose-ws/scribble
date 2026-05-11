@@ -11,32 +11,40 @@ from sqlalchemy import text
 
 
 # --- Custom Log Handler ---
-
 class DBLogHandler(logging.Handler):
+    FLUSH_EVERY = 10  # write to DB once per 10 log lines
+
     def __init__(self, job_id, app):
         super().__init__()
         self.job_id = job_id
         self.app = app
+        self._buffer = []
 
     def emit(self, record):
-        log_entry = self.format(record)
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        self._buffer.append(f"\n[{timestamp}] {self.format(record)}")
+        if len(self._buffer) >= self.FLUSH_EVERY:
+            self.flush()
+
+    def flush(self):
+        if not self._buffer:
+            return
+        pending = "".join(self._buffer)
+        self._buffer.clear()
         with self.app.app_context():
             try:
                 job = Job.query.get(self.job_id)
                 if job:
-                    timestamp = datetime.now().strftime('%H:%M:%S')
-                    job.logs += f"\n[{timestamp}] {log_entry}"
+                    job.logs += pending
                     db.session.commit()
             except Exception:
                 pass
-
 
 # Helper to format seconds
 def format_timestamp(seconds):
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     return "{:02d}:{:02d}:{:02d}".format(int(h), int(m), int(s))
-
 
 def run_transcription(job, config, app):
     session = Session.query.get(job.session_id)
@@ -78,7 +86,12 @@ def run_transcription(job, config, app):
         job.logs += f"\n[Config] Using campaign-level overrides for transcription settings."
 
     try:
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        model = WhisperModel(
+            model_size,
+            device=device,
+            compute_type=compute_type,
+            cpu_threads=effective.get('whisper_threads') or 0,
+        )
     except Exception as e:
         job.logs += f"\nFATAL: Failed to load model. {str(e)}"
         db.session.commit()
@@ -116,10 +129,12 @@ def run_transcription(job, config, app):
                 file_path,
                 beam_size=effective.get('whisper_beam_size', 5),
                 language=effective.get('whisper_language', 'en'),
+                initial_prompt=effective.get('whisper_initial_prompt') or None,
                 vad_filter=True,
                 vad_parameters=dict(
                     min_silence_duration_ms=500,
-                    threshold=effective.get('vad_onset', 0.5)
+                    threshold=effective.get('vad_onset', 0.5),
+                    min_speech_duration_ms=effective.get('vad_offset', 0.363)
                 )
             )
 
@@ -165,9 +180,14 @@ def run_transcription(job, config, app):
             continue
 
     # 6. Cleanup & Save Master
+    db_handler.flush()
     fw_logger.removeHandler(db_handler)
     master_transcript.sort(key=lambda x: x[0])
     final_text = "\n".join([x[1] for x in master_transcript])
+    
+    # Apply campaign options (username substitution, timestamp removal, line consolidation)
+    from app import apply_transcript_options
+    final_text = apply_transcript_options(final_text, session.campaign)
 
     transcript_path = os.path.join(session.directory_path, "session_transcript.txt")
     with open(transcript_path, 'w', encoding='utf-8') as f:

@@ -28,21 +28,16 @@
                             {% endif %}
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Session Number</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-light">#</span>
-                                <input type="number" class="form-control" name="session_number" id="sessionNumInput" required min="1">
-                            </div>
-                            <div class="form-text text-muted small">
-                                Pre-filled with the next available number. You can edit this manually if needed.
-                            </div>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Session Zip File</label>
+                            <input type="file" name="file" class="form-control" accept=".zip,.flac" required>
+                            <div class="form-text">Upload a <code>.zip</code> from Craig/your recorder, or a single merged <code>.flac</code> file.</div>
                         </div>
 
                         <div class="mb-4">
-                            <label class="form-label fw-bold">Session Zip File</label>
-                            <input type="file" name="file" class="form-control" accept=".zip" required>
-                            <div class="form-text">Upload the raw .zip file from your recording device.</div>
+                            <label class="form-label fw-bold">Session Date <span class="text-muted fw-normal">(optional)</span></label>
+                            <input type="datetime-local" name="session_date" class="form-control">
+                            <div class="form-text">Leave blank to auto-detect from the zip's <code>info.txt</code>. Set this for uploads without one, or to correct the date.</div>
                         </div>
 
                         <div class="d-none mb-3" id="progressWrapper">
@@ -67,31 +62,7 @@
 </div>
 
 <script>
-    // --- 1. Dynamic Session Number Logic ---
-    // Pull the data passed from Flask into a JS object
-    const nextNumbers = {{ next_numbers | tojson }};
-    const campaignSelect = document.getElementById('campaignSelect');
-    const sessionInput = document.getElementById('sessionNumInput');
-
-    function updateSessionNumber() {
-        const campId = campaignSelect.value;
-        // If a campaign is selected and we have a number for it, use it.
-        // Otherwise default to 1.
-        if (campId && nextNumbers[campId]) {
-            sessionInput.value = nextNumbers[campId];
-        } else if (!sessionInput.value) {
-            sessionInput.value = 1;
-        }
-    }
-
-    // Listen for campaign changes
-    campaignSelect.addEventListener('change', updateSessionNumber);
-
-    // Run once on load to handle the "Default Campaign" selection
-    document.addEventListener('DOMContentLoaded', updateSessionNumber);
-
-
-    // --- 2. Upload Handling (AJAX) ---
+    // --- Upload Handling (AJAX) ---
     document.getElementById('uploadForm').addEventListener('submit', function(e) {
         e.preventDefault();
 

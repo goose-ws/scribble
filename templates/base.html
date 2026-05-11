@@ -1,23 +1,129 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="{{ 'dark' if config.dark_mode else 'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scribble</title>
+    <title>{{ container_name }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8f9fa; }
+        /* ── Light mode ── */
+        body { background-color: #f3f4f6; }
         .sidebar { min-height: 100vh; background-color: #343a40; color: white; }
-        .sidebar a { color: rgba(255,255,255,.75); text-decoration: none; display: block; padding: 10px; }
-        .sidebar a:hover, .sidebar a.active { color: white; background-color: rgba(255,255,255,.1); }
+        .sidebar a { color: rgba(255,255,255,.75); text-decoration: none; display: block; padding: 10px 14px; border-radius: 6px; margin: 1px 6px; }
+        .sidebar a:hover { color: white; background-color: rgba(255,255,255,.08); }
+        .sidebar a.active { color: white; background-color: rgba(255,255,255,.12); }
         .sidebar .logout { margin-top: 20px; border-top: 1px solid #4b545c; }
+
+        /* ── Dark mode ── */
+        [data-bs-theme="dark"] body { background-color: #0f1117; }
+
+        [data-bs-theme="dark"] .sidebar {
+            background-color: #171b24;
+            border-right: 1px solid rgba(255,255,255,0.07);
+        }
+        [data-bs-theme="dark"] .sidebar a { color: #8b92a8; }
+        [data-bs-theme="dark"] .sidebar a:hover { color: #e8eaf0; background-color: rgba(255,255,255,0.04); }
+        [data-bs-theme="dark"] .sidebar a.active { color: #a99ff8; background-color: rgba(124,106,247,0.15); }
+
+        [data-bs-theme="dark"] .card {
+            background-color: #171b24;
+            border-color: rgba(255,255,255,0.07);
+        }
+        [data-bs-theme="dark"] .card-header {
+            background-color: #171b24 !important;
+            border-bottom-color: rgba(255,255,255,0.07);
+        }
+        [data-bs-theme="dark"] .table {
+            --bs-table-bg: transparent;
+            --bs-table-border-color: rgba(255,255,255,0.07);
+            --bs-table-hover-bg: rgba(255,255,255,0.03);
+            color: #8b92a8;
+        }
+        [data-bs-theme="dark"] .table th { color: #525a70; font-weight: 400; }
+        [data-bs-theme="dark"] .table td { color: #8b92a8; }
+        [data-bs-theme="dark"] .table-light { --bs-table-bg: #1e2433; color: #525a70; }
+        [data-bs-theme="dark"] .table .fw-bold,
+        [data-bs-theme="dark"] .table .fw-semibold { color: #e8eaf0; }
+
+        [data-bs-theme="dark"] .accordion-item {
+            background-color: #171b24;
+            border-color: rgba(255,255,255,0.07);
+        }
+        [data-bs-theme="dark"] .accordion-button {
+            background-color: #171b24;
+            color: #e8eaf0;
+            box-shadow: none;
+        }
+        [data-bs-theme="dark"] .accordion-button:not(.collapsed) {
+            background-color: rgba(255,255,255,0.02);
+            color: #e8eaf0;
+        }
+        [data-bs-theme="dark"] .accordion-button::after { filter: invert(0.6); }
+
+        [data-bs-theme="dark"] .badge.bg-light {
+            background-color: #1e2433 !important;
+            color: #8b92a8 !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+        [data-bs-theme="dark"] .progress { background-color: #252c3d; }
+
+        [data-bs-theme="dark"] .btn-outline-primary  { --bs-btn-color: #a99ff8; --bs-btn-border-color: rgba(124,106,247,0.4); --bs-btn-hover-bg: rgba(124,106,247,0.15); --bs-btn-hover-color: #a99ff8; --bs-btn-hover-border-color: rgba(124,106,247,0.6); --bs-btn-active-bg: rgba(124,106,247,0.2); }
+        [data-bs-theme="dark"] .btn-outline-secondary { --bs-btn-color: #8b92a8; --bs-btn-border-color: rgba(255,255,255,0.15); --bs-btn-hover-bg: rgba(255,255,255,0.06); --bs-btn-hover-color: #e8eaf0; --bs-btn-hover-border-color: rgba(255,255,255,0.25); }
+        [data-bs-theme="dark"] .btn-outline-danger   { --bs-btn-color: #f06060; --bs-btn-border-color: rgba(240,96,96,0.4); --bs-btn-hover-bg: rgba(240,96,96,0.12); --bs-btn-hover-color: #f06060; }
+        [data-bs-theme="dark"] .btn-outline-warning  { --bs-btn-color: #f5a623; --bs-btn-border-color: rgba(245,166,35,0.4); --bs-btn-hover-bg: rgba(245,166,35,0.12); --bs-btn-hover-color: #f5a623; }
+        [data-bs-theme="dark"] .btn-outline-info     { --bs-btn-color: #4db8ff; --bs-btn-border-color: rgba(77,184,255,0.4); --bs-btn-hover-bg: rgba(77,184,255,0.12); --bs-btn-hover-color: #4db8ff; }
+        [data-bs-theme="dark"] .btn-outline-light    { --bs-btn-color: #8b92a8; --bs-btn-border-color: rgba(255,255,255,0.12); --bs-btn-hover-bg: rgba(255,255,255,0.06); --bs-btn-hover-color: #e8eaf0; }
+        [data-bs-theme="dark"] .btn-primary          { background-color: #7c6af7; border-color: #7c6af7; }
+        [data-bs-theme="dark"] .btn-primary:hover    { background-color: #6a58e0; border-color: #6a58e0; }
+
+        [data-bs-theme="dark"] .form-control,
+        [data-bs-theme="dark"] .form-select {
+            background-color: #1e2433;
+            border-color: rgba(255,255,255,0.1);
+            color: #e8eaf0;
+        }
+        [data-bs-theme="dark"] .form-control:focus,
+        [data-bs-theme="dark"] .form-select:focus {
+            background-color: #252c3d;
+            border-color: rgba(124,106,247,0.5);
+            box-shadow: 0 0 0 3px rgba(124,106,247,0.15);
+            color: #e8eaf0;
+        }
+        [data-bs-theme="dark"] .form-control::placeholder { color: #525a70; }
+
+        [data-bs-theme="dark"] .alert-info    { background-color: rgba(77,184,255,0.1);  border-color: rgba(77,184,255,0.25);  color: #4db8ff; }
+        [data-bs-theme="dark"] .alert-success { background-color: rgba(52,201,122,0.1);  border-color: rgba(52,201,122,0.25);  color: #34c97a; }
+        [data-bs-theme="dark"] .alert-warning { background-color: rgba(245,166,35,0.1);  border-color: rgba(245,166,35,0.25);  color: #f5a623; }
+        [data-bs-theme="dark"] .alert-danger  { background-color: rgba(240,96,96,0.1);   border-color: rgba(240,96,96,0.25);   color: #f06060; }
+
+        [data-bs-theme="dark"] .modal-content {
+            background-color: #171b24;
+            border-color: rgba(255,255,255,0.1);
+        }
+        [data-bs-theme="dark"] .modal-header { border-bottom-color: rgba(255,255,255,0.07); }
+        [data-bs-theme="dark"] .modal-footer { border-top-color: rgba(255,255,255,0.07); }
+        [data-bs-theme="dark"] .btn-close { filter: invert(1) opacity(0.5); }
+        [data-bs-theme="dark"] .btn-close:hover { filter: invert(1) opacity(0.9); }
+
+        [data-bs-theme="dark"] hr { border-color: rgba(255,255,255,0.07); }
+        [data-bs-theme="dark"] .text-muted { color: #525a70 !important; }
+        [data-bs-theme="dark"] .border, [data-bs-theme="dark"] .border-top,
+        [data-bs-theme="dark"] .border-bottom, [data-bs-theme="dark"] .border-end { border-color: rgba(255,255,255,0.07) !important; }
+        [data-bs-theme="dark"] .bg-white { background-color: #171b24 !important; }
+        [data-bs-theme="dark"] .shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
     </style>
 </head>
 <body>
     <div class="d-flex">
         {% if session.get('logged_in') %}
         <div class="sidebar p-3" style="width: 250px;">
-            <h3><a href="/">Scribble</a></h3>
+            <h3>
+                <a href="/" style="display:flex; align-items:center; gap:8px;">
+                    <img src="/scribble.png" alt="" style="width:50px; height:50px; object-fit:contain; flex-shrink:0;">
+                    {{ container_name }}
+                </a>
+            </h3>
             <span style="color: #999; font-size: 0.8em; margin-right: 10px;"><a href="https://github.com/goose-ws/scribble">v{{ app_version }}</a></span>
                 {% if update_available %}
                         <div class="sidebar-footer badge bg-warning text-dark text-decoration-none">
@@ -31,6 +137,17 @@
             <a href="/settings">Settings</a>
             <div class="logout">
                 <a href="/logout" class="text-danger">Logout</a>
+            </div>
+            <div class="mt-3 pt-2 border-top border-secondary">
+                <form method="POST" action="/settings/toggle_dark_mode">
+                    <button type="submit" class="btn btn-sm btn-outline-light w-100">
+                        {% if config.dark_mode %}
+                            <i class="bi bi-sun me-1"></i> Light Mode
+                        {% else %}
+                            <i class="bi bi-moon me-1"></i> Dark Mode
+                        {% endif %}
+                    </button>
+                </form>
             </div>
         </div>
         {% endif %}

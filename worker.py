@@ -4,14 +4,34 @@ import logging
 import traceback
 import shutil
 import os
+import re
 import subprocess
 import requests
+from datetime import datetime
 from database import db
 from models import Job, Session
 from config import load_config
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def get_archive_path(campaign_name, session_date):
+    """Generate a unique archive path: '[Campaign] - YYYY-MM-DD.zip', with -2/-3 suffix on collision."""
+    archive_dir = '/data/archive'
+    safe_name = re.sub(r'[^\w\s\-]', '', campaign_name).strip()
+    date_str = session_date.strftime('%Y-%m-%d') if session_date else datetime.now().strftime('%Y-%m-%d')
+    base = f"{safe_name} - {date_str}"
+
+    candidate = os.path.join(archive_dir, f"{base}.zip")
+    if not os.path.exists(candidate):
+        return candidate
+
+    counter = 2
+    while True:
+        candidate = os.path.join(archive_dir, f"{base}-{counter}.zip")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
 
 class JobManager(threading.Thread):
     def __init__(self, app):
@@ -178,23 +198,37 @@ class JobManager(threading.Thread):
                 job.status = 'completed'
                 db.session.commit()
 
-                # [CLEANUP] Remove .flac files if Archive exists
-                archive_name = session.original_filename
+                # Archive the zip and clean up flacs
+                archive_dir = '/data/archive'
+                zip_src = os.path.join(session.directory_path, session.original_filename)
                 archive_exists = False
-                if os.path.exists(os.path.join('/data/archive', archive_name)): archive_exists = True
-                if not archive_exists:
-                    for f in os.listdir('/data/archive'):
-                        if f.endswith(archive_name):
-                            archive_exists = True
-                            break
 
+                # Check if already archived (handles crash/retry case)
+                for f in os.listdir(archive_dir):
+                    if f == session.original_filename or f.endswith(session.original_filename):
+                        archive_exists = True
+                        break
+
+                # Move zip to archive with friendly name if enabled
+                if not archive_exists and config.get('archive_zip') and os.path.exists(zip_src):
+                    archive_path = get_archive_path(session.campaign.name, session.session_date)
+                    archive_name = os.path.basename(archive_path)
+                    try:
+                        shutil.move(zip_src, archive_path)
+                        session.original_filename = archive_name
+                        db.session.commit()
+                        archive_exists = True
+                        job.logs += f"\n[Archive] Saved as: {archive_name}"
+                    except Exception as e:
+                        job.logs += f"\n[Archive Warning] Could not archive zip: {e}"
+
+                # Remove flac files now that the archive is confirmed
                 if archive_exists:
                     job.logs += "\n[Cleanup] Removing source audio files..."
                     try:
-                        folder = session.directory_path
-                        for f in os.listdir(folder):
+                        for f in os.listdir(session.directory_path):
                             if f.endswith('.flac'):
-                                os.remove(os.path.join(folder, f))
+                                os.remove(os.path.join(session.directory_path, f))
                     except Exception as e:
                         job.logs += f"\n[Cleanup Warning] {e}"
 

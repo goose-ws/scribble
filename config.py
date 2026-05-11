@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import logging
+import bcrypt
 
 CONFIG_PATH = '/data/config.json'
 
@@ -13,6 +14,7 @@ DEFAULT_CONFIG = {
     "flask_secret_key": "",
     "archive_zip": False,
     "db_space_saver": True,
+    "dark_mode": False,
     # Database
     "db_type": "sqlite",
     "db_address": "",
@@ -31,10 +33,10 @@ DEFAULT_CONFIG = {
     # VAD
     "vad_method": "silero",
     "vad_onset": 0.5,
-    "vad_offset": 0.363,
+    "vad_min_speech_ms": 0.363,
     # LLM
     "llm_provider": "Google",
-    "llm_model": "gemini-2.5-flash",
+    "llm_model": "gemini-flash-latest",
     "google_api_key": "",
     "anthropic_api_key": "",
     "openai_api_key": "",
@@ -48,11 +50,13 @@ DEFAULT_CONFIG = {
     }
 }
 
+_config_cache = None
 
 def load_config():
     """Load config from disk, or create with defaults if missing."""
-    if not os.path.exists('/data'):
-        os.makedirs('/data', exist_ok=True)
+    global _config_cache
+    if _config_cache is not None:
+        return _config_cache
 
     config = DEFAULT_CONFIG.copy()
     # Deep-copy nested dicts so defaults are never mutated
@@ -131,7 +135,7 @@ def load_config():
     # Security: generate WebUI password on first run
     if not config['webui_password']:
         temp_pass = secrets.token_urlsafe(12)
-        config['webui_password'] = temp_pass
+        config['webui_password'] = bcrypt.hashpw(temp_pass.encode(), bcrypt.gensalt()).decode()
         logging.warning("=" * 50)
         logging.warning(f"FIRST RUN - TEMPORARY PASSWORD: {temp_pass}")
         logging.warning("=" * 50)
@@ -141,18 +145,24 @@ def load_config():
     if not config['flask_secret_key']:
         config['flask_secret_key'] = secrets.token_hex(32)
         save_config(config)
+        
+    # 3. vad_offset -> vad_min_speech_ms
+    if 'vad_offset' in saved_config and 'vad_min_speech_ms' not in saved_config:
+        saved_config['vad_min_speech_ms'] = saved_config.pop('vad_offset')
+        logging.info("Config migration: vad_offset -> vad_min_speech_ms")
 
+    _config_cache = config
     return config
-
 
 def save_config(config):
     """Save the current config to disk."""
+    global _config_cache
+    _config_cache = config  # update cache immediately
     try:
         with open(CONFIG_PATH, 'w') as f:
             json.dump(config, f, indent=4)
     except Exception as e:
         logging.error(f"Error saving config.json: {e}")
-
 
 def get_effective_config(global_config, campaign):
     """
@@ -187,10 +197,15 @@ def get_effective_config(global_config, campaign):
             effective[field] = val
 
     # --- VAD overrides ---
-    for field in ('vad_method', 'vad_onset', 'vad_offset'):
+    for field in ('vad_method', 'vad_onset'):
         val = getattr(campaign, field, None)
         if val is not None:
             effective[field] = val
+
+    # vad_offset column maps to the renamed config key
+    val = getattr(campaign, 'vad_offset', None)
+    if val is not None:
+        effective['vad_min_speech_ms'] = val
 
     # --- LLM overrides ---
     if campaign.llm_provider:
@@ -206,7 +221,6 @@ def get_effective_config(global_config, campaign):
         effective['llm_output_cost'] = campaign.llm_output_cost
 
     return effective
-
 
 def _resolve_effective_costs(effective):
     """

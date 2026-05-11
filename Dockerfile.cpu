@@ -32,18 +32,20 @@ RUN pip install --no-cache-dir meson && \
 RUN rm requirements.txt
 
 # Copy Application Code
+COPY --chmod=775 start.sh /app
 COPY --chmod=775 app.py /app
 COPY --chmod=775 config.py /app
 COPY --chmod=775 database.py /app
-COPY --chmod=775 db_migrate.py /app
+RUN mkdir /app/scripts
+COPY --chmod=775 scripts/db_migrate.py /app/scripts
 COPY --chmod=775 llm_engine.py /app
 COPY --chmod=775 models.py /app
-COPY --chmod=775 start.sh /app
 COPY --chmod=775 transcription_engine.py /app
 COPY --chmod=775 worker.py /app
 COPY --chmod=775 migrate.py /app
 RUN mkdir /app/templates
 COPY templates /app/templates/
+COPY Scribble.png /app/scribble.png
 
 # Environment Variables
 ENV PUID=1000

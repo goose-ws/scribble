@@ -13,6 +13,30 @@
     .hover-opacity-100:hover {
         opacity: 1 !important;
     }
+    #live-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        color: #6c757d;
+        transition: opacity 0.3s;
+    }
+    #live-indicator .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #6c757d;
+        animation: none;
+    }
+    #live-indicator.active .dot {
+        background: #28a745;
+        animation: pulse 1.4s infinite;
+    }
+    #live-indicator.active { color: #28a745; }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.3; }
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-4">
@@ -21,26 +45,7 @@
             <h1 class="display-6 mb-0 fw-bold">
                 Session {{ recording_session.session_number }}
             </h1>
-            
-            <button class="btn btn-sm btn-link text-secondary text-decoration-none align-middle" 
-                    type="button" 
-                    data-bs-toggle="collapse" 
-                    data-bs-target="#editSessionNum" 
-                    title="Edit Session Number">
-                <i class="bi bi-pencil-square fs-5"><div class="text-muted mt-1"><span class="font-monospace small opacity-75">✏️ Edit Session Number</span></div></i>
-            </button>
         </div>
-
-        <div class="collapse mt-2" id="editSessionNum">
-            <form action="{{ url_for('update_session_number', session_id=recording_session.id) }}" method="POST" class="d-flex gap-2 align-items-center">
-                <div class="input-group input-group-sm" style="max-width: 150px;">
-                    <span class="input-group-text">#</span>
-                    <input type="number" name="session_number" class="form-control" value="{{ recording_session.session_number }}">
-                </div>
-                <button class="btn btn-sm btn-success" type="submit">Save</button>
-            </form>
-        </div>
-
         <div class="text-muted mt-1">
             <i class="bi bi-calendar3"></i> {{ recording_session.local_time_str }} 
             <span class="mx-2">|</span> 
@@ -49,6 +54,24 @@
             <span class="font-monospace small opacity-75">{{ recording_session.original_filename }}</span>
             <span id="session-status-badge" class="badge ms-2 bg-secondary rounded-pill align-text-top">{{ recording_session.status }}</span>
         </div>
+        <button class="btn btn-sm btn-link text-secondary text-decoration-none align-middle" 
+                type="button" 
+                data-bs-toggle="collapse" 
+                data-bs-target="#editSessionDate" 
+                title="Edit Session Date">
+            <i class="bi fs-5"><div class="text-muted mt-1"><span class="font-monospace small opacity-75">✏️ Edit Session Date</span></div></i>
+        </button>
+        <div class="collapse mt-2" id="editSessionDate">
+            <form action="{{ url_for('update_session_date', session_id=recording_session.id) }}" method="POST" class="d-flex gap-2 align-items-center">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-calendar3"></i></span>
+                    <input type="datetime-local" name="session_date" class="form-control"
+                           value="{{ recording_session.session_date.strftime('%Y-%m-%dT%H:%M') if recording_session.local_time_str != 'Unknown Date' else '' }}"
+                           title="Edit session date">
+                </div>
+                <button class="btn btn-sm btn-success" type="submit">Save</button>
+            </form>
+        </div>
     </div>
 
     <div class="btn-group">
@@ -56,6 +79,27 @@
         <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
             <i class="bi bi-trash"></i> Delete
         </button>
+    </div>
+
+    <div class="modal fade" id="cleanupModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-hdd me-2"></i>Clean Up Raw Files?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>This will delete the raw audio files (<code>.flac</code>, <code>.zip</code>, etc.) from disk for this session.</p>
+                    <p class="text-muted small">The session record, transcript, and recap are kept. This is useful when you've finished processing and want to free up disk space.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form action="{{ url_for('cleanup_session_files', session_id=recording_session.id) }}" method="POST">
+                        <button type="submit" class="btn btn-warning">Remove Audio Files</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="modal fade" id="deleteModal" tabindex="-1">
@@ -150,12 +194,8 @@
                         <tfoot class="border-top">
                             <tr>
                                 <td class="fw-bold text-dark">Totals:</td>
-                                <td class="text-end fw-bold text-dark font-monospace">
-                                    {{ total_duration }}
-                                </td>
-                                <td class="text-end fw-bold text-dark font-monospace">
-                                    {{ total_words }}
-                                </td>
+                                <td class="text-end fw-bold text-dark font-monospace">{{ total_duration }}</td>
+                                <td class="text-end fw-bold text-dark font-monospace">{{ total_words }}</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -251,7 +291,14 @@
     </div>
 
     <div class="col-lg-5">
-        <h5 class="mb-3">Processing Steps</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Processing Steps</h5>
+            <span id="live-indicator">
+                <span class="dot"></span>
+                <span class="label">Idle</span>
+            </span>
+        </div>
+
         <div class="accordion" id="jobAccordion">
             {% for job in jobs %}
             <div class="accordion-item" id="job-card-{{ job.id }}">
@@ -260,7 +307,6 @@
                         <div class="d-flex w-100 justify-content-between align-items-center me-3">
                             <span>
                                 <strong class="job-step-name">{{ job.step|title }}</strong>
-                                
                                 <span id="job-status-{{ job.id }}" class="badge ms-2 
                                     {% if job.status == 'completed' %}bg-success
                                     {% elif job.status == 'processing' %}bg-warning text-dark
@@ -269,7 +315,6 @@
                                     {{ job.status }}
                                 </span>
                             </span>
-                            
                             <small id="job-time-{{ job.id }}" class="text-muted" title="Finished: {{ job.updated_at.strftime('%H:%M:%S') }}">
                                 <i class="bi bi-stopwatch"></i> {{ job_durations[job.id] }}
                             </small>
@@ -279,9 +324,10 @@
                 <div id="collapse{{ job.id }}" class="accordion-collapse collapse {% if job.status == 'processing' or job.status == 'error' %}show{% endif %}" data-bs-parent="#jobAccordion">
                     <div class="accordion-body bg-dark text-light p-2">
                         <pre id="job-logs-{{ job.id }}" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem; margin: 0;">{{ job.logs }}</pre>
-                        
                         <div id="job-retry-{{ job.id }}" class="mt-2 pt-2 border-top border-secondary text-end {% if job.status != 'error' %}d-none{% endif %}">
-                            <a href="/job/{{ job.id }}/retry" class="btn btn-sm btn-danger">Retry Step</a>
+                            <form method="POST" action="/job/{{ job.id }}/retry" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-danger">Retry Step</button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -297,38 +343,45 @@
                 <div class="d-grid gap-2">
                     
                     {% set folder_exists = folder_exists_check(recording_session.directory_path, recording_session.original_filename) %}
-                    <a href="/session/{{ recording_session.id }}/action/retranscribe" 
-                       class="btn btn-outline-primary {% if not folder_exists %}disabled{% endif %}"
-                       onclick="return confirm('Warning: Overwrite ALL transcripts?')">
-                        <i class="bi bi-mic-fill"></i> Re-Transcribe Session (Full)
-                    </a>
+                    <form method="POST" action="/session/{{ recording_session.id }}/action/retranscribe">
+                        <button type="submit"
+                                class="btn btn-outline-primary w-100 {% if not folder_exists %}disabled{% endif %}"
+                                onclick="return confirm('Warning: Overwrite ALL transcripts?')">
+                            <i class="bi bi-mic-fill"></i> Re-Transcribe Session (Full)
+                        </button>
+                    </form>
                     {% if not folder_exists %}
                         <small class="text-danger text-center">Zip file not in archive</small>
                     {% endif %}
 
-                    <a href="/session/{{ recording_session.id }}/action/rebuild_transcript" 
-                       class="btn btn-outline-info">
-                        <i class="bi bi-layers-half"></i> Re-Generate Master Transcript
-                    </a>
-                    <small class="text-muted text-center lh-1" style="font-size: 0.7em;">
-                        Merges current User Transcripts into Master
-                    </small>
+                    <form method="POST" action="/session/{{ recording_session.id }}/action/rebuild_transcript">
+                        <button type="submit" class="btn btn-outline-info w-100">
+                            <i class="bi bi-layers-half"></i> Re-Generate Master Transcript
+                        </button>
+                    </form>
 
-                    <a href="/session/{{ recording_session.id }}/action/regenerate_summary" 
-                       class="btn btn-outline-warning"
-                       onclick="return confirm('Overwrite current recap?')">
-                        <i class="bi bi-cpu"></i> Re-Generate Recap
-                    </a>
+                    <form method="POST" action="/session/{{ recording_session.id }}/action/regenerate_summary">
+                        <button type="submit" class="btn btn-outline-warning w-100"
+                                onclick="return confirm('Overwrite current recap?')">
+                            <i class="bi bi-cpu"></i> Re-Request Recap
+                        </button>
+                    </form>
                     
-                    <a href="/session/{{ recording_session.id }}/action/rerun_scripts" 
-                       class="btn btn-outline-secondary">
-                        <i class="bi bi-terminal"></i> Re-Run Scripts
-                    </a>
+                    <form method="POST" action="/session/{{ recording_session.id }}/action/rerun_scripts">
+                        <button type="submit" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-terminal"></i> Re-Run Post Recap Scripts
+                        </button>
+                    </form>
 
-                    <a href="/session/{{ recording_session.id }}/action/post_discord" 
-                       class="btn btn-outline-primary">
-                        <i class="bi bi-discord"></i> Post to Discord
-                    </a>
+                    <form method="POST" action="/session/{{ recording_session.id }}/action/post_discord">
+                        <button type="submit" class="btn btn-outline-primary w-100">
+                            <i class="bi bi-discord"></i> Post to Discord
+                        </button>
+                    </form>
+                    
+                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#cleanupModal">
+                        <i class="bi bi-hdd"></i> Clean Session Files
+                    </button>
                 </div>
             </div>
         </div>
@@ -336,39 +389,169 @@
 </div>
 
 <script>
-    // Initialize with data from Server
+    // ── User Transcript Tab ──────────────────────────────────────────────────
     let userDataStore = {{ user_transcripts | tojson }};
-    
+
     function showUserTranscript() {
-        const select = document.getElementById('user-select');
-        const textarea = document.getElementById('user-textarea');
+        const select     = document.getElementById('user-select');
+        const textarea   = document.getElementById('user-textarea');
         const hiddenInput = document.getElementById('form-username');
         const user = select.value;
-        
         hiddenInput.value = user;
-        
-        if (user && userDataStore[user]) {
-            textarea.value = userDataStore[user];
-        } else {
-            textarea.value = "";
-        }
+        textarea.value = (user && userDataStore[user]) ? userDataStore[user] : '';
     }
-    
+
     function downloadCurrentUser() {
         const user = document.getElementById('user-select').value;
-        if(user) window.location.href = `/session/{{ recording_session.id }}/download/user_${user}`;
+        if (user) window.location.href = `/session/{{ recording_session.id }}/download/user_${user}`;
     }
 
     function retranscribeCurrentUser() {
         const user = document.getElementById('user-select').value;
-        if(user) {
-            if(confirm(`Re-transcribe audio for ${user}? This requires the source files.`)) {
-                window.location.href = `/session/{{ recording_session.id }}/action/retranscribe_user_${user}`;
-            }
+        if (user && confirm(`Re-transcribe audio for ${user}? This requires the source files.`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/session/{{ recording_session.id }}/action/retranscribe_user_${user}`;
+            document.body.appendChild(form);
+            form.submit();
         }
     }
-    
-    // Initial Load
+
     showUserTranscript();
+
+    // ── Live Job Polling ─────────────────────────────────────────────────────
+    const SESSION_ID = {{ recording_session.id }};
+    const POLL_URL   = `/api/session/${SESSION_ID}/jobs`;
+    const POLL_MS    = 2500;
+
+    const STATUS_CLASSES = {
+        'completed':  'bg-success',
+        'processing': 'bg-warning text-dark',
+        'error':      'bg-danger',
+        'pending':    'bg-secondary',
+    };
+
+    const SESSION_STATUS_CLASSES = {
+        'Completed':  'bg-success',
+        'Error':      'bg-danger',
+        'Processing': 'bg-warning text-dark',
+        'Analyzing':  'bg-info text-dark',
+        'Ready':      'bg-primary',
+    };
+
+    let pollTimer = null;
+
+    function setLiveIndicator(active) {
+        const el = document.getElementById('live-indicator');
+        el.querySelector('.label').textContent = active ? 'Live' : 'Idle';
+        el.classList.toggle('active', active);
+    }
+
+    function updateSessionBadge(status) {
+        const badge = document.getElementById('session-status-badge');
+        if (!badge) return;
+        badge.className = 'badge ms-2 rounded-pill align-text-top ' + (SESSION_STATUS_CLASSES[status] || 'bg-secondary');
+        badge.textContent = status;
+    }
+
+    function upsertJobCard(job) {
+        const accordion = document.getElementById('jobAccordion');
+        let card = document.getElementById(`job-card-${job.id}`);
+
+        if (!card) {
+            // New job appeared (e.g. summarize queued after transcribe completes)
+            card = document.createElement('div');
+            card.className = 'accordion-item';
+            card.id = `job-card-${job.id}`;
+            card.innerHTML = `
+                <h2 class="accordion-header">
+                    <button class="accordion-button" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#collapse${job.id}">
+                        <div class="d-flex w-100 justify-content-between align-items-center me-3">
+                            <span>
+                                <strong>${job.step.charAt(0).toUpperCase() + job.step.slice(1)}</strong>
+                                <span id="job-status-${job.id}" class="badge ms-2 bg-secondary">${job.status}</span>
+                            </span>
+                            <small id="job-time-${job.id}" class="text-muted">
+                                <i class="bi bi-stopwatch"></i> ${job.duration}
+                            </small>
+                        </div>
+                    </button>
+                </h2>
+                <div id="collapse${job.id}" class="accordion-collapse collapse show" data-bs-parent="#jobAccordion">
+                    <div class="accordion-body bg-dark text-light p-2">
+                        <pre id="job-logs-${job.id}" style="max-height:300px;overflow-y:auto;font-size:0.8rem;margin:0;"></pre>
+                        <div id="job-retry-${job.id}" class="mt-2 pt-2 border-top border-secondary text-end d-none">
+                            <form method="POST" action="/job/${job.id}/retry" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-danger">Retry Step</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>`;
+            accordion.appendChild(card);
+        }
+
+        // Status badge
+        const statusBadge = document.getElementById(`job-status-${job.id}`);
+        if (statusBadge) {
+            statusBadge.className = 'badge ms-2 ' + (STATUS_CLASSES[job.status] || 'bg-secondary');
+            statusBadge.textContent = job.status;
+        }
+
+        // Duration
+        const timeEl = document.getElementById(`job-time-${job.id}`);
+        if (timeEl) timeEl.innerHTML = `<i class="bi bi-stopwatch"></i> ${job.duration}`;
+
+        // Logs — only update DOM if content changed, then auto-scroll if near bottom
+        const logsEl = document.getElementById(`job-logs-${job.id}`);
+        if (logsEl && logsEl.textContent !== job.logs) {
+            const atBottom = logsEl.scrollHeight - logsEl.scrollTop <= logsEl.clientHeight + 40;
+            logsEl.textContent = job.logs;
+            if (atBottom) logsEl.scrollTop = logsEl.scrollHeight;
+        }
+
+        // Retry button
+        const retryEl = document.getElementById(`job-retry-${job.id}`);
+        if (retryEl) retryEl.classList.toggle('d-none', job.status !== 'error');
+
+        // Accordion — only change state on status transition, not every poll
+        const prevStatus = jobPrevStatus[job.id];
+        if (prevStatus !== job.status) {
+            const collapseEl = document.getElementById(`collapse${job.id}`);
+            if (collapseEl) {
+                const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false });
+                if (job.status === 'processing' || job.status === 'error') {
+                    bsCollapse.show();
+                } else if (job.status === 'completed' && prevStatus === 'processing') {
+                    bsCollapse.hide();
+                }
+            }
+            jobPrevStatus[job.id] = job.status;
+        }
+    }
+
+    async function poll() {
+        try {
+            const resp = await fetch(POLL_URL);
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            updateSessionBadge(data.session_status);
+            data.jobs.forEach(upsertJobCard);
+
+            const stillActive = data.jobs.some(j => j.status === 'processing' || j.status === 'pending');
+            setLiveIndicator(stillActive);
+
+            // Keep polling while work is in progress; back off on idle
+            pollTimer = setTimeout(poll, stillActive ? POLL_MS : POLL_MS * 4);
+        } catch (e) {
+            // Network hiccup — retry after a longer delay
+            pollTimer = setTimeout(poll, POLL_MS * 4);
+        }
+    }
+
+    // Start immediately — if everything is already done it runs once,
+    // finds nothing active, sets indicator to Idle, and backs off.
+    poll();
 </script>
 {% endblock %}

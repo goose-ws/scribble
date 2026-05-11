@@ -174,10 +174,10 @@
                             <div class="form-text">Sensitivity to speech start (0–1).</div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Offset Threshold</label>
-                            <input type="number" step="0.001" min="0" max="1" name="vad_offset" class="form-control"
-                                   placeholder="{{ config.vad_offset }}">
-                            <div class="form-text">Sensitivity to speech end (0–1).</div>
+                            <label class="form-label">Min Speech Duration (ms)</label>
+                            <input type="number" step="0.001" min="0" name="vad_offset" class="form-control"
+                                   placeholder="{{ config.vad_min_speech_ms }}">
+                            <div class="form-text">Minimum duration to count as speech.</div>
                         </div>
                     </div>
                 </div>
@@ -227,8 +227,9 @@
     <table class="table table-hover align-middle">
         <thead class="table-light">
             <tr>
-                <th class="text-center" style="width: 80px;">Default</th> 
+                <th class="text-center" style="width: 80px;">Default</th>
                 <th>Name</th>
+                <th class="text-center">Sessions</th>
                 <th>LLM Override</th>
                 <th>Discord Hook</th>
                 <th class="text-end">Actions</th>
@@ -236,21 +237,37 @@
         </thead>
         <tbody>
             {% for campaign in campaigns %}
+            {% set stats = campaign_stats[campaign.id] %}
             <tr>
                 <td class="text-center">
                     {% if campaign.is_default %}
                         ✅
                     {% else %}
-                        <a href="{{ url_for('set_default_campaign', campaign_id=campaign.id) }}" 
-                           class="text-muted opacity-25 hover-opacity-100" 
-                           title="Set as Default">
-                            <i class="bi bi-star-fill fs-4"></i>
-                        </a>
+                        <form method="POST" action="{{ url_for('set_default_campaign', campaign_id=campaign.id) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-link p-0 border-0 text-muted opacity-25 hover-opacity-100" title="Set as Default">
+                                <i class="bi bi-star-fill fs-4"></i>
+                            </button>
+                        </form>
                     {% endif %}
                 </td>
-                
-                <td class="fw-bold">{{ campaign.name }}</td>
-                
+
+                <td>
+                    <div class="fw-bold">{{ campaign.name }}</div>
+                    {% if stats.user_stats %}
+                    <button class="btn btn-link btn-sm p-0 mt-1 text-muted"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#stats-{{ campaign.id }}"
+                            aria-expanded="false">
+                        <i class="bi bi-bar-chart-line me-1"></i><small>Player stats</small>
+                    </button>
+                    {% endif %}
+                </td>
+
+                <td class="text-center">
+                    <span class="badge bg-light text-dark border">{{ stats.session_count }}</span>
+                </td>
+
                 <td>
                     {% if campaign.llm_provider or campaign.llm_model %}
                         <span class="badge bg-primary">
@@ -269,15 +286,65 @@
                         <span class="text-muted small fst-italic">None</span>
                     {% endif %}
                 </td>
-                
+
                 <td class="text-end">
                     <a href="{{ url_for('campaign_detail', campaign_id=campaign.id) }}" class="btn btn-outline-info btn-sm me-1">View</a>
                     <a href="/campaigns/edit/{{ campaign.id }}" class="btn btn-outline-primary btn-sm me-1">Edit</a>
-                    <a href="/campaigns/delete/{{ campaign.id }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this campaign? Sessions associated with it may break.')">Delete</a>
+                    <form method="POST" action="/campaigns/delete/{{ campaign.id }}" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-danger btn-sm"
+                                onclick="return confirm('Delete this campaign? Sessions associated with it may break.')">
+                            Delete
+                        </button>
+                    </form>
                 </td>
             </tr>
+
+            {% if stats.user_stats %}
+            <tr class="bg-light">
+                <td colspan="6" class="p-0 border-0">
+                    <div class="collapse" id="stats-{{ campaign.id }}">
+                        <div class="px-4 py-3">
+                            <h6 class="text-muted mb-2 small text-uppercase fw-semibold">
+                                <i class="bi bi-people me-1"></i>Player Activity — {{ campaign.name }}
+                            </h6>
+                            <table class="table table-sm table-borderless mb-0 small">
+                                <thead>
+                                    <tr class="text-muted">
+                                        <th style="width: 40%;">Player</th>
+                                        <th class="text-center">Sessions</th>
+                                        <th class="text-end">Words Spoken</th>
+                                        <th style="width: 35%;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                {% set max_words = stats.user_stats[0].word_count if stats.user_stats else 1 %}
+                                {% for u in stats.user_stats %}
+                                <tr>
+                                    <td class="fw-semibold">
+                                        <i class="bi bi-person-circle me-1 text-secondary"></i>{{ u.username }}
+                                    </td>
+                                    <td class="text-center text-muted">{{ u.session_count }}</td>
+                                    <td class="text-end text-muted font-monospace">{{ "{:,}".format(u.word_count) }}</td>
+                                    <td class="ps-3">
+                                        {% if max_words > 0 %}
+                                        <div class="progress" style="height: 6px;">
+                                            <div class="progress-bar bg-info"
+                                                 style="width: {{ ((u.word_count / max_words) * 100) | round | int }}%"></div>
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
+
             {% else %}
-            <tr><td colspan="5" class="text-center py-4 text-muted">No campaigns found.</td></tr>
+            <tr><td colspan="6" class="text-center py-4 text-muted">No campaigns found.</td></tr>
             {% endfor %}
         </tbody>
     </table>

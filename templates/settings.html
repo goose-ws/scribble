@@ -80,7 +80,7 @@
                         <div class="col-6">
                             <label class="form-label">Threads</label>
                             <input type="number" name="whisper_threads" class="form-control mb-1" value="{{ config.whisper_threads }}">
-                            <small class="form-text text-muted d-block mb-2">Number of CPU threads to use.<br />Enter '0' to use all available threads.</small>
+                            <small class="form-text text-muted d-block mb-2">Number of CPU threads to use.<br />Set to <code>0</code> to automatically use all available threads.</small>
                         </div>
                         <div class="col-6">
                             <label class="form-label">Batch Size</label>
@@ -137,15 +137,18 @@
                              id="whisper_initial_prompt" name="whisper_initial_prompt"
                              value="{{ config.whisper_initial_prompt }}"
                              placeholder="e.g. Tiamat, Avernus">
-                      <small class="form-text text-muted">Vocabulary hints fed to Whisper before transcription for proper nouns.</small>
+                      <small class="form-text text-muted">Vocabulary hints fed to Whisper before transcription, such as proper nouns and character names. Helps transcribe domain-specific words accurately.</small>
                     </div>
 
-                    <label class="form-label">Hugging Face Token (Optional)</label>
+                    <label class="form-label">Hugging Face Token <span class="text-muted">(Optional)</span></label>
                     <div class="input-group">
                         <input type="password" name="hf_token" id="hf_token" class="form-control" value="{{ config.hf_token }}">
                         <button class="btn btn-outline-secondary" type="button" onclick="togglePass('hf_token')">👁</button>
                     </div>
-                    <small class="form-text text-muted">To download gated models and/or reduce rate limits from Hugging Face.</small>
+                    <small class="form-text text-muted">
+                        Required only for gated HuggingFace models (e.g. pyannote speaker diarization). Leave blank if using standard Whisper models.
+                        Get a token at <a href="https://huggingface.co/settings/tokens" target="_blank">huggingface.co/settings/tokens</a>.
+                    </small>
                 </div>
             </div>
         </div>
@@ -158,18 +161,20 @@
                     <select name="vad_method" class="form-select mb-1">
                         <option value="silero" {% if config.vad_method == 'silero' %}selected{% endif %}>Silero</option>
                     </select>
-                    <small class="form-text text-muted d-block mb-2">Voice Activity Detection engine to use.</small>
+                    <small class="form-text text-muted d-block mb-2">
+                        VAD backend selection. Currently <code>silero</code> is the only supported option — additional backends may be added in future releases.
+                    </small>
 
                     <div class="row">
                         <div class="col-6">
                             <label class="form-label">Onset Threshold</label>
                             <input type="number" step="0.001" name="vad_onset" class="form-control mb-1" value="{{ config.vad_onset }}">
-                            <small class="form-text text-muted d-block mb-2">Sensitivity to speech start (0-1).</small>
+                            <small class="form-text text-muted d-block mb-2">Sensitivity to speech start (0–1).</small>
                         </div>
                         <div class="col-6">
-                            <label class="form-label">Offset Threshold</label>
-                            <input type="number" step="0.001" name="vad_offset" class="form-control mb-1" value="{{ config.vad_offset }}">
-                            <small class="form-text text-muted d-block mb-2">Sensitivity to speech end (0-1).</small>
+                            <label class="form-label">Min Speech Duration (ms)</label>
+                            <input type="number" step="0.001" name="vad_min_speech_ms" class="form-control mb-1" value="{{ config.vad_min_speech_ms }}">
+                            <small class="form-text text-muted d-block mb-2">Minimum duration a sound must last to be counted as speech.</small>
                         </div>
                     </div>
                     
@@ -213,8 +218,8 @@
         
                     <div class="mb-3">
                         <label class="form-label">Default Model Name</label>
-                        <input type="text" name="llm_model" class="form-control" value="{{ config.llm_model or 'gemini-2.5-flash' }}">
-                        <small class="form-text text-muted">The specific model identifier used by the Default Provider (e.g. gemini-2.5-flash, claude-sonnet-4-5, gpt-4o, llama3).</small>
+                        <input type="text" name="llm_model" class="form-control" value="{{ config.llm_model or 'gemini-flash-latest' }}">
+                        <small class="form-text text-muted">The specific model identifier used by the Default Provider (e.g. gemini-flash-latest, claude-sonnet-4-5, gpt-4o, llama3).</small>
                     </div>
 
                     <hr>
@@ -242,6 +247,21 @@
 
                     <hr>
                     <h6 class="text-muted mb-1">Token Costs (per million tokens)</h6>
+
+                    {% set all_costs_zero =
+                        config.llm_costs.get('Google', {}).get('input', 0) == 0 and
+                        config.llm_costs.get('Google', {}).get('output', 0) == 0 and
+                        config.llm_costs.get('OpenAI', {}).get('input', 0) == 0 and
+                        config.llm_costs.get('OpenAI', {}).get('output', 0) == 0 and
+                        config.llm_costs.get('Anthropic', {}).get('input', 0) == 0 and
+                        config.llm_costs.get('Anthropic', {}).get('output', 0) == 0
+                    %}
+                    {% if all_costs_zero %}
+                    <div class="alert alert-info py-2 small mt-2">
+                        <i class="bi bi-info-circle"></i> Cost tracking is currently disabled. Enter your provider's per-million-token rates below to enable it. Costs are shown on the dashboard and campaign pages.
+                    </div>
+                    {% endif %}
+
                     <small class="text-muted d-block mb-3">
                         Used for cost estimation on the dashboard. Set to <code>0</code> if you don't want cost tracking for a provider.
                         These are the defaults; individual campaigns can override them.
@@ -290,6 +310,12 @@
         <div class="card-header bg-dark text-white">System Settings</div>
         <div class="card-body">
             <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" name="dark_mode" id="dark_mode" {% if config.dark_mode %}checked{% endif %}>
+                <label class="form-check-label" for="dark_mode">Dark Mode</label>
+                <small class="form-text text-muted d-block">Use a dark colour scheme across the UI.</small>
+            </div>
+
+            <div class="form-check form-switch mb-2">
                 <input class="form-check-input" type="checkbox" name="archive_zip" id="archive_zip" {% if config.archive_zip %}checked{% endif %}>
                 <label class="form-check-label" for="archive_zip">Archive Uploaded Zip Files</label>
                 <small class="form-text text-muted d-block">Retain original zip files on disk after processing.</small>
@@ -305,10 +331,10 @@
             
             <label class="form-label">WebUI Password</label>
             <div class="input-group">
-                <input type="password" name="webui_password" id="webui_password" class="form-control" value="{{ config.webui_password }}">
+                <input type="password" name="webui_password" id="webui_password" class="form-control" placeholder="Leave blank to keep current password">
                 <button class="btn btn-outline-secondary" type="button" onclick="togglePass('webui_password')">👁</button>
             </div>
-            <small class="form-text text-muted">Change the password used to access this dashboard.</small>
+            <small class="form-text text-muted">Enter a new password to change it. Leave blank to keep your current password.</small>
         </div>
     </div>
     

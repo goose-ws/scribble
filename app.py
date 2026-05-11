@@ -1,3 +1,4 @@
+import threading
 import logging
 import os
 import zipfile
@@ -7,6 +8,8 @@ import re
 import requests
 import time
 import markdown
+import bcrypt
+import json
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.utils import secure_filename
@@ -18,6 +21,8 @@ from models import Campaign, Session, Job, Transcript, LLMLog, DiscordLog
 from worker import JobManager
 from io import BytesIO
 from xhtml2pdf import pisa
+from urllib.parse import urlparse, urljoin
+from types import SimpleNamespace
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,10 +31,98 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.2.7'
+APP_VERSION = '4.3.0'
+
+def apply_transcript_options(text, campaign):
+    """
+    Apply per-campaign transcript processing options to a transcript string.
+
+    Steps (each gated by the campaign's settings):
+      1. Rename Discord usernames to display names via campaign.username_map (JSON dict).
+      2. Strip [HH:MM:SS] timestamps from every line.
+      3. Consolidate consecutive lines from the same speaker into one line.
+    """
+    if not text:
+        return text
+
+    # 1. Username renaming -------------------------------------------------
+    if campaign.username_map:
+        try:
+            umap = json.loads(campaign.username_map)
+            for discord_name, display_name in umap.items():
+                if discord_name and display_name:
+                    # Replace username in "username:" patterns (with optional leading timestamp)
+                    text = re.sub(
+                        r'(?m)^(\[\d{2}:\d{2}:\d{2}\]\s*)?' + re.escape(discord_name) + r'(?=:)',
+                        lambda m: (m.group(1) or '') + display_name,
+                        text
+                    )
+        except Exception:
+            pass  # Malformed JSON — skip renaming silently
+
+    # 2. Remove timestamps -------------------------------------------------
+    if campaign.transcript_remove_timestamps:
+        text = re.sub(r'^\[\d{2}:\d{2}:\d{2}\]\s*', '', text, flags=re.MULTILINE)
+
+    # 3. Consolidate consecutive lines by speaker --------------------------
+    if campaign.transcript_consolidate_lines:
+        speaker_re = re.compile(r'^(?:\[\d{2}:\d{2}:\d{2}\]\s*)?([^:\n]+):\s*(.*)')
+        lines = text.split('\n')
+        consolidated = []
+        cur_speaker = None
+        cur_parts = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                if cur_speaker and cur_parts:
+                    consolidated.append(f'{cur_speaker}: ' + ' '.join(cur_parts))
+                    cur_speaker = None
+                    cur_parts = []
+                consolidated.append('')
+                continue
+
+            m = speaker_re.match(stripped)
+            if m:
+                speaker, content = m.group(1).strip(), m.group(2).strip()
+                if speaker == cur_speaker:
+                    if content:
+                        cur_parts.append(content)
+                else:
+                    if cur_speaker and cur_parts:
+                        consolidated.append(f'{cur_speaker}: ' + ' '.join(cur_parts))
+                    cur_speaker = speaker
+                    cur_parts = [content] if content else []
+            else:
+                if cur_speaker and cur_parts:
+                    consolidated.append(f'{cur_speaker}: ' + ' '.join(cur_parts))
+                    cur_speaker = None
+                    cur_parts = []
+                consolidated.append(line)
+
+        if cur_speaker and cur_parts:
+            consolidated.append(f'{cur_speaker}: ' + ' '.join(cur_parts))
+
+        text = '\n'.join(consolidated)
+
+    return text
+
+@app.template_filter('from_json')
+def from_json_filter(value):
+    """Parse a JSON string in a Jinja template."""
+    try:
+        return json.loads(value) if value else {}
+    except Exception:
+        return {}
 @app.context_processor
 def inject_version():
-    return dict(app_version=APP_VERSION)
+    hostname = os.environ.get('HOSTNAME', 'scribble')
+    container_name = hostname.capitalize()
+    return dict(app_version=APP_VERSION, container_name=container_name)
+
+@app.route('/scribble.png')
+def serve_logo():
+    return send_file('/app/scribble.png', mimetype='image/png')
 
 # Initialize Database
 init_db(app)
@@ -37,22 +130,25 @@ init_db(app)
 @app.context_processor
 def utility_processor():
     """Inject smart path check into templates."""
+    # Build archive file set once per request for the listdir fallback
+    archive_dir = '/data/archive'
+    try:
+        archive_files = set(os.listdir(archive_dir)) if os.path.exists(archive_dir) else set()
+    except Exception:
+        archive_files = set()
+
     def folder_exists_check(path, filename=None):
         if os.path.exists(path):
             return True
 
         try:
-            archive_dir = '/data/archive'
             session_name = os.path.basename(path.rstrip('/'))
             if os.path.exists(os.path.join(archive_dir, session_name + ".flac.zip")): return True
             if os.path.exists(os.path.join(archive_dir, session_name + ".zip")): return True
 
             if filename:
                 if os.path.exists(os.path.join(archive_dir, filename)): return True
-                if os.path.exists(archive_dir):
-                    for f in os.listdir(archive_dir):
-                        if f.endswith(filename):
-                            return True
+                return any(f.endswith(filename) for f in archive_files)
 
         except Exception:
             return False
@@ -79,36 +175,29 @@ def inject_config():
 
 # --- Update Checker Logic ---
 LATEST_VERSION_CACHE = None
-LAST_CHECK_TIME = 0
 CHECK_INTERVAL = 3600  # Check once per hour
 
-def get_remote_version():
-    global LATEST_VERSION_CACHE, LAST_CHECK_TIME
+def _version_check_worker():
+    global LATEST_VERSION_CACHE
+    while True:
+        try:
+            url = 'https://raw.githubusercontent.com/goose-ws/scribble/refs/heads/main/app.py'
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 200:
+                match = re.search(r"APP_VERSION\s*=\s*['\"]([0-9.]+)['\"]", resp.text)
+                if match:
+                    LATEST_VERSION_CACHE = match.group(1)
+        except Exception:
+            pass
+        time.sleep(CHECK_INTERVAL)
 
-    if LATEST_VERSION_CACHE and (time.time() - LAST_CHECK_TIME < CHECK_INTERVAL):
-        return LATEST_VERSION_CACHE
-
-    try:
-        url = 'https://raw.githubusercontent.com/goose-ws/scribble/refs/heads/main/app.py'
-        resp = requests.get(url, timeout=3)
-
-        if resp.status_code == 200:
-            match = re.search(r"APP_VERSION\s*=\s*['\"]([\d\.]+)['\"]", resp.text)
-            if match:
-                LATEST_VERSION_CACHE = match.group(1)
-                LAST_CHECK_TIME = time.time()
-                return LATEST_VERSION_CACHE
-    except Exception:
-        pass
-
-    return None
+_version_thread = threading.Thread(target=_version_check_worker, daemon=True)
+_version_thread.start()
 
 @app.context_processor
 def inject_update_status():
-    remote_ver = get_remote_version()
-    is_update = False
-    if remote_ver and remote_ver != APP_VERSION:
-        is_update = True
+    remote_ver = LATEST_VERSION_CACHE
+    is_update = bool(remote_ver and remote_ver != APP_VERSION)
     return dict(update_available=is_update, latest_version=remote_ver)
 
 def parse_llm_stats(summary_text):
@@ -199,17 +288,84 @@ def parse_integrations_status(job_logs):
 
     return status
 
+def get_campaign_stats():
+    """Return per-campaign metrics dict: session count + per-user session appearances and word counts."""
+    all_campaigns = Campaign.query.all()
+
+    if not all_campaigns:
+        return all_campaigns, {}
+
+    # Single query for all sessions
+    all_sessions = Session.query.all()
+    sessions_by_campaign = {}
+    session_to_campaign = {}
+    for s in all_sessions:
+        sessions_by_campaign.setdefault(s.campaign_id, []).append(s)
+        session_to_campaign[s.id] = s.campaign_id
+
+    # Single query for all transcripts across all sessions
+    user_stats_by_campaign = {}
+    if session_to_campaign:
+        all_transcripts = Transcript.query.filter(
+            Transcript.session_id.in_(session_to_campaign.keys())
+        ).all()
+        for t in all_transcripts:
+            camp_id = session_to_campaign[t.session_id]
+            uname = t.username or "Unknown"
+            camp_map = user_stats_by_campaign.setdefault(camp_id, {})
+            if uname not in camp_map:
+                camp_map[uname] = {"sessions": set(), "words": 0}
+            camp_map[uname]["sessions"].add(t.session_id)
+            if t.content:
+                camp_map[uname]["words"] += len(t.content.split())
+
+    # Assemble final structure
+    campaign_stats = {}
+    for campaign in all_campaigns:
+        user_stats_map = user_stats_by_campaign.get(campaign.id, {})
+        sorted_users = sorted(
+            [{"username": u, "session_count": len(v["sessions"]), "word_count": v["words"]}
+             for u, v in user_stats_map.items()],
+            key=lambda x: x["word_count"],
+            reverse=True
+        )
+        campaign_stats[campaign.id] = {
+            "campaign": campaign,
+            "session_count": len(sessions_by_campaign.get(campaign.id, [])),
+            "user_stats": sorted_users,
+        }
+
+    return all_campaigns, campaign_stats
+
 # --- LOGIN ROUTES ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         password = request.form.get('password')
         config = load_config()
-        if password == config.get('webui_password'):
+        stored = config.get('webui_password', '')
+        if stored.startswith('$2b$') or stored.startswith('$2a$'):
+            # Hashed — use bcrypt
+            password_valid = bcrypt.checkpw(password.encode(), stored.encode())
+        else:
+            # Plaintext (legacy) — compare directly, then migrate
+            password_valid = (password == stored)
+            if password_valid:
+                config['webui_password'] = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                save_config(config)
+
+        if password_valid:
             session['logged_in'] = True
             flash('Logged in successfully.', 'success')
+            def is_safe_url(target):
+                ref_url = urlparse(request.host_url)
+                test_url = urlparse(urljoin(request.host_url, target))
+                return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
+
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('dashboard'))
+            if not next_page or not is_safe_url(next_page):
+                next_page = url_for('dashboard')
+            return redirect(next_page)
         else:
             flash('Invalid password.', 'error')
     return render_template('login.html')
@@ -226,7 +382,9 @@ def logout():
 @login_required
 def dashboard():
     recent_sessions = Session.query.order_by(Session.created_at.desc()).limit(10).all()
-    return render_template('dashboard.html', sessions=recent_sessions)
+    all_campaigns, campaign_stats = get_campaign_stats()
+    return render_template('dashboard.html', sessions=recent_sessions,
+                           campaigns=all_campaigns, campaign_stats=campaign_stats)
 
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -246,8 +404,13 @@ def settings():
                 else:
                     config[key] = value
 
+        new_password = request.form.get('webui_password', '').strip()
+        if new_password:
+            config['webui_password'] = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+
         config['archive_zip'] = 'archive_zip' in request.form
         config['db_space_saver'] = 'db_space_saver' in request.form
+        config['dark_mode'] = 'dark_mode' in request.form
 
         # Handle per-provider token costs
         llm_costs = config.get('llm_costs', {})
@@ -269,6 +432,14 @@ def settings():
         return redirect(url_for('settings'))
 
     return render_template('settings.html', config=config)
+
+@app.route('/settings/toggle_dark_mode', methods=['POST'])
+@login_required
+def toggle_dark_mode():
+    config = load_config()
+    config['dark_mode'] = not config.get('dark_mode', False)
+    save_config(config)
+    return redirect(request.referrer or url_for('dashboard'))
 
 @app.route('/campaigns', methods=['GET', 'POST'])
 @login_required
@@ -335,10 +506,11 @@ def campaigns():
 
         return redirect(url_for('campaigns'))
 
-    all_campaigns = Campaign.query.all()
+    all_campaigns, campaign_stats = get_campaign_stats()
     return render_template('campaigns.html',
                          campaigns=all_campaigns,
-                         available_scripts=available_scripts)
+                         available_scripts=available_scripts,
+                         campaign_stats=campaign_stats)
 
 @app.route('/campaigns/edit/<int:id>', methods=['GET', 'POST'])
 @login_required
@@ -393,6 +565,14 @@ def edit_campaign(id):
         campaign.vad_onset             = _nfloat(request.form.get('vad_onset'))
         campaign.vad_offset            = _nfloat(request.form.get('vad_offset'))
 
+        # Transcript processing options
+        discord_names   = request.form.getlist('umap_discord')
+        display_names   = request.form.getlist('umap_display')
+        umap = {d.strip(): n.strip() for d, n in zip(discord_names, display_names) if d.strip()}
+        campaign.username_map = json.dumps(umap) if umap else None
+        campaign.transcript_remove_timestamps = 'transcript_remove_timestamps' in request.form
+        campaign.transcript_consolidate_lines = 'transcript_consolidate_lines' in request.form
+
         should_be_default = 'is_default' in request.form
 
         if should_be_default:
@@ -414,7 +594,7 @@ def edit_campaign(id):
                          available_scripts=available_scripts,
                          current_scripts=current_scripts)
 
-@app.route('/campaigns/set_default/<int:campaign_id>')
+@app.route('/campaigns/set_default/<int:campaign_id>', methods=['POST'])
 @login_required
 def set_default_campaign(campaign_id):
     Campaign.query.update({Campaign.is_default: False})
@@ -425,7 +605,7 @@ def set_default_campaign(campaign_id):
     flash(f'"{camp.name}" is now the default campaign.', 'success')
     return redirect(url_for('campaigns'))
 
-@app.route('/campaigns/delete/<int:id>')
+@app.route('/campaigns/delete/<int:id>', methods=['POST'])
 @login_required
 def delete_campaign(id):
     campaign = Campaign.query.get_or_404(id)
@@ -493,18 +673,19 @@ def campaign_detail(campaign_id):
             match = re.search(r'([\d,]+)\s+in\s*\|\s*([\d,]+)\s+out\s*\|\s*([\d,]+)\s+total', token_str)
             if match:
                 try:
-                    total_in += int(match.group(1).replace(',', ''))
-                    total_out += int(match.group(2).replace(',', ''))
+                    in_tok  = int(match.group(1).replace(',', ''))
+                    out_tok = int(match.group(2).replace(',', ''))
+                    total_in       += in_tok
+                    total_out      += out_tok
                     total_combined += int(match.group(3).replace(',', ''))
-                except: pass
-            else:
-                match_total = re.search(r'([\d,]+)\s+total', token_str)
-                if match_total:
-                    try: total_combined += int(match_total.group(1).replace(',', ''))
-                    except: pass
-                else:
-                    try: total_combined += int(token_str.replace(',', ''))
-                    except: pass
+
+                    from config import get_effective_config
+                    app_config = load_config()
+                    eff = get_effective_config(app_config, s.campaign)
+                    total_cost += (in_tok  * eff.get('llm_input_cost',  0.0) / 1_000_000 +
+                                   out_tok * eff.get('llm_output_cost', 0.0) / 1_000_000)
+                except Exception:
+                    pass
 
     return render_template('campaign_detail.html',
                            campaign=campaign,
@@ -640,33 +821,35 @@ def download_campaign_pdf(campaign_id, doc_type):
         headers={"Content-disposition": f"attachment; filename={filename}"}
     )
 
+def renumber_campaign_sessions(campaign_id):
+    """Recompute session_number for every session in a campaign.
+    Unknown-date sessions → 0. Dated sessions → 1, 2, 3 … in ascending date order.
+    Multiple unknown-date sessions all receive 0."""
+    sessions = Session.query.filter_by(campaign_id=campaign_id).all()
+    unknown = [s for s in sessions if s.local_time_str == 'Unknown Date']
+    dated   = sorted([s for s in sessions if s.local_time_str != 'Unknown Date'],
+                     key=lambda s: s.session_date)
+    for s in unknown:
+        s.session_number = 0
+    for i, s in enumerate(dated, start=1):
+        s.session_number = i
+    db.session.commit()
+
 @app.route('/upload', methods=['GET', 'POST'])
 @login_required
 def upload():
     if request.method == 'GET':
         campaigns = Campaign.query.all()
-
-        default_campaign_id = None
-        next_numbers = {}
-
-        for c in campaigns:
-            if c.is_default:
-                default_campaign_id = c.id
-
-            max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=c.id).scalar()
-            next_numbers[c.id] = 0 if max_sess is None else max_sess + 1
-
+        default_campaign_id = next((c.id for c in campaigns if c.is_default), None)
         return render_template('upload.html',
                                campaigns=campaigns,
-                               default_campaign_id=default_campaign_id,
-                               next_numbers=next_numbers)
+                               default_campaign_id=default_campaign_id)
 
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
 
     file = request.files['file']
     campaign_id = request.form.get('campaign_id')
-    manual_session_number = request.form.get('session_number')
 
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
@@ -680,26 +863,43 @@ def upload():
         upload_dir = os.path.join('/data/input', upload_id)
         os.makedirs(upload_dir, exist_ok=True)
 
-        zip_path = os.path.join(upload_dir, filename)
+        file_path = os.path.join(upload_dir, filename)
 
         try:
-            file.save(zip_path)
+            file.save(file_path)
+            is_flac = filename.lower().endswith('.flac')
 
-            if not zipfile.is_zipfile(zip_path): raise Exception("Not a zip.")
-            with zipfile.ZipFile(zip_path, 'r') as z: z.extractall(upload_dir)
-
-            info_path = os.path.join(upload_dir, 'info.txt')
-            session_date_utc, local_time_str = parse_session_date(info_path)
-
-            if manual_session_number:
-                final_session_num = int(manual_session_number)
+            if is_flac:
+                now_utc = datetime.utcnow()
+                info_path = os.path.join(upload_dir, 'info.txt')
+                with open(info_path, 'w') as f:
+                    f.write(f"Start time: {now_utc.strftime('%Y-%m-%dT%H:%M:%S')}+00:00\n")
+                session_date_utc, local_time_str = parse_session_date(info_path)
             else:
-                max_sess = db.session.query(func.max(Session.session_number)).filter_by(campaign_id=campaign_id).scalar()
-                final_session_num = 0 if max_sess is None else max_sess + 1
+                if not zipfile.is_zipfile(file_path): raise Exception("Not a zip.")
+                with zipfile.ZipFile(file_path, 'r') as z: z.extractall(upload_dir)
+                info_path = os.path.join(upload_dir, 'info.txt')
+                session_date_utc, local_time_str = parse_session_date(info_path)
+
+            # Override date if the user supplied one on the upload form
+            manual_date_raw = request.form.get('session_date', '').strip()
+            if manual_date_raw:
+                try:
+                    naive_dt = datetime.strptime(manual_date_raw, '%Y-%m-%dT%H:%M')
+                    target_tz = os.environ.get('TZ', 'UTC')
+                    try:
+                        local_tz = pytz.timezone(target_tz)
+                        local_dt = local_tz.localize(naive_dt)
+                        session_date_utc = local_dt.astimezone(pytz.utc).replace(tzinfo=None)
+                    except Exception:
+                        session_date_utc = naive_dt
+                    local_time_str = naive_dt.strftime('%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    pass
 
             new_session = Session(
                 campaign_id=campaign_id,
-                session_number=final_session_num,
+                session_number=0,
                 session_date=session_date_utc,
                 local_time_str=local_time_str,
                 original_filename=filename,
@@ -709,6 +909,8 @@ def upload():
 
             db.session.add(new_session)
             db.session.commit()
+
+            renumber_campaign_sessions(campaign_id)
 
             initial_job = Job(session_id=new_session.id, step="transcribe", status="pending", logs="Job queued.")
             db.session.add(initial_job)
@@ -721,19 +923,59 @@ def upload():
             if os.path.exists(upload_dir): shutil.rmtree(upload_dir)
             return jsonify({'error': str(e)}), 500
 
-@app.route('/session/<int:session_id>/update_number', methods=['POST'])
+
+
+@app.route('/session/<int:session_id>/update_date', methods=['POST'])
 @login_required
-def update_session_number(session_id):
+def update_session_date(session_id):
     session_obj = Session.query.get_or_404(session_id)
     try:
-        new_num = int(request.form.get('session_number'))
-        session_obj.session_number = new_num
+        raw = request.form.get('session_date', '').strip()
+        # Accept "YYYY-MM-DDThh:mm" from datetime-local input
+        naive_dt = datetime.strptime(raw, '%Y-%m-%dT%H:%M')
+        target_tz = os.environ.get('TZ', 'UTC')
+        try:
+            local_tz = pytz.timezone(target_tz)
+            local_dt = local_tz.localize(naive_dt)
+            utc_dt = local_dt.astimezone(pytz.utc).replace(tzinfo=None)
+            display_str = naive_dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            utc_dt = naive_dt
+            display_str = naive_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        session_obj.session_date = utc_dt
+        session_obj.local_time_str = display_str
         db.session.commit()
-        flash(f"Session number updated to {new_num}", "success")
-    except ValueError:
-        flash("Invalid number provided.", "error")
+        renumber_campaign_sessions(session_obj.campaign_id)
+        flash('Session date updated.', 'success')
+    except (ValueError, TypeError):
+        flash('Invalid date format.', 'error')
 
     return redirect(url_for('session_detail', session_id=session_id))
+
+@app.route('/api/session/<int:session_id>/jobs')
+@login_required
+def api_session_jobs(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    jobs = Job.query.filter_by(session_id=session_id).order_by(Job.created_at.asc()).all()
+
+    def fmt_duration(job):
+        if job.created_at and job.updated_at:
+            secs = int((job.updated_at - job.created_at).total_seconds())
+            return f"{secs // 60}m {secs % 60}s" if secs >= 60 else f"{secs}s"
+        return "—"
+
+    return jsonify({
+        'session_status': session_obj.status,
+        'jobs': [{
+            'id': j.id,
+            'step': j.step,
+            'status': j.status,
+            'logs': j.logs or '',
+            'duration': fmt_duration(j),
+            'updated_at': j.updated_at.strftime('%H:%M:%S') if j.updated_at else '—'
+        } for j in jobs]
+    })
 
 @app.route('/api/metrics')
 @login_required
@@ -957,7 +1199,7 @@ def download_file(session_id, file_type):
         headers={"Content-disposition": f"attachment; filename={filename}"}
     )
 
-@app.route('/session/<int:session_id>/action/<action_type>')
+@app.route('/session/<int:session_id>/action/<action_type>', methods=['POST'])
 @login_required
 def session_action(session_id, action_type):
     session_obj = Session.query.get_or_404(session_id)
@@ -1056,6 +1298,10 @@ def session_action(session_id, action_type):
             all_lines.sort(key=lambda x: x[0])
             final_text = "\n".join([x[1] for x in all_lines])
 
+            # Apply username renaming (only) so the stored master transcript uses display names
+            if session_obj.campaign:
+                final_text = apply_transcript_options(final_text, session_obj.campaign)
+
             session_obj.transcript_text = final_text
             db.session.commit()
 
@@ -1133,10 +1379,39 @@ def session_status_api(session_id):
         'jobs': jobs_data
     })
 
+@app.route('/session/<int:session_id>/cleanup_files', methods=['POST'])
+@login_required
+def cleanup_session_files(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    removed = []
+    errors = []
+
+    REMOVABLE_EXTENSIONS = {'.flac', '.zip', '.opus', '.ogg', '.mp3', '.wav', '.m4a'}
+
+    if os.path.exists(session_obj.directory_path):
+        for fname in os.listdir(session_obj.directory_path):
+            if any(fname.lower().endswith(ext) for ext in REMOVABLE_EXTENSIONS):
+                fpath = os.path.join(session_obj.directory_path, fname)
+                try:
+                    os.remove(fpath)
+                    removed.append(fname)
+                except Exception as e:
+                    errors.append(f"{fname}: {e}")
+
+    if removed:
+        flash(f'Removed {len(removed)} file(s): {", ".join(removed)}', 'success')
+    else:
+        flash('No raw audio files found to remove.', 'info')
+    if errors:
+        flash(f'Could not remove: {"; ".join(errors)}', 'warning')
+
+    return redirect(url_for('session_detail', session_id=session_id))
+
 @app.route('/session/<int:session_id>/delete', methods=['POST'])
 @login_required
 def delete_session(session_id):
     session_obj = Session.query.get_or_404(session_id)
+    campaign_id = session_obj.campaign_id
 
     try:
         if os.path.exists(session_obj.directory_path):
@@ -1147,6 +1422,7 @@ def delete_session(session_id):
     try:
         db.session.delete(session_obj)
         db.session.commit()
+        renumber_campaign_sessions(campaign_id)
         flash(f'Session "{session_obj.original_filename}" deleted.', 'success')
     except Exception as e:
         db.session.rollback()
@@ -1154,7 +1430,7 @@ def delete_session(session_id):
 
     return redirect(url_for('dashboard'))
 
-@app.route('/job/<int:job_id>/retry')
+@app.route('/job/<int:job_id>/retry', methods=['POST'])
 @login_required
 def retry_job(job_id):
     job = Job.query.get_or_404(job_id)

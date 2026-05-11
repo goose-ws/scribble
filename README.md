@@ -164,7 +164,7 @@ If you want to move your existing data (e.g., from SQLite to Postgres), Scribble
 1. Ensure your Scribble container is running and connected to your **current** (source) database.
 2. Run the interactive migration script inside the container:
 ```bash
-docker exec -it scribble python db_migrate.py
+docker exec -it scribble python scripts/db_migrate.py
 ```
 
 3. Follow the prompts to select your **destination** database type and enter the connection details (Host, User, Password, Database Name).

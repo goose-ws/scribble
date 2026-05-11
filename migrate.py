@@ -176,6 +176,33 @@ def run_migration():
                     conn.execute(text("ALTER TABLE campaign ADD COLUMN vad_offset FLOAT NULL"))
                     conn.commit()
 
+                # --- Campaign: username_map ---
+                try:
+                    conn.execute(text("SELECT username_map FROM campaign LIMIT 1"))
+                    logger.info("Column 'username_map' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'username_map' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN username_map TEXT NULL"))
+                    conn.commit()
+
+                # --- Campaign: transcript_remove_timestamps ---
+                try:
+                    conn.execute(text("SELECT transcript_remove_timestamps FROM campaign LIMIT 1"))
+                    logger.info("Column 'transcript_remove_timestamps' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'transcript_remove_timestamps' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN transcript_remove_timestamps BOOLEAN DEFAULT 0"))
+                    conn.commit()
+
+                # --- Campaign: transcript_consolidate_lines ---
+                try:
+                    conn.execute(text("SELECT transcript_consolidate_lines FROM campaign LIMIT 1"))
+                    logger.info("Column 'transcript_consolidate_lines' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'transcript_consolidate_lines' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN transcript_consolidate_lines BOOLEAN DEFAULT 0"))
+                    conn.commit()
+
                 # --- DiscordLog: session_id ---
                 try:
                     conn.execute(text("SELECT session_id FROM discord_log LIMIT 1"))
@@ -200,11 +227,16 @@ def run_migration():
         campaigns = Campaign.query.all()
         for camp in campaigns:
             sessions = Session.query.filter_by(campaign_id=camp.id).order_by(Session.session_date).all()
-            for idx, session_obj in enumerate(sessions):
-                new_num = idx
-                if session_obj.session_number != new_num:
-                    session_obj.session_number = new_num
-                    logger.info(f"Updated: {camp.name} - {session_obj.original_filename} -> Session #{new_num}")
+            dated = [s for s in sessions if s.session_date is not None]
+            undated = [s for s in sessions if s.session_date is None]
+
+            for session_obj in undated:
+                session_obj.session_number = 0
+
+            for idx, session_obj in enumerate(dated, start=1):
+                session_obj.session_number = idx
+                logger.info(f"Updated: {camp.name} - {session_obj.original_filename} -> Session #{idx}")
+
         db.session.commit()
 
         logger.info("Migration Complete.")

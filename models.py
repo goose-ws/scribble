@@ -39,6 +39,12 @@ class Campaign(db.Model):
     llm_input_cost = db.Column(db.Float, nullable=True)
     llm_output_cost = db.Column(db.Float, nullable=True)
 
+    # --- Transcript Processing ---
+    # JSON object mapping Discord username -> display name, e.g. {"CoolGamer": "Gandalf (DM)"}
+    username_map = db.Column(db.Text, nullable=True)
+    transcript_remove_timestamps = db.Column(db.Boolean, default=False)
+    transcript_consolidate_lines = db.Column(db.Boolean, default=False)
+
     sessions = db.relationship('Session', backref='campaign', lazy=True)
 
 
