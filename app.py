@@ -31,7 +31,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.3.1'
+APP_VERSION = '4.3.2'
 
 def apply_transcript_options(text, campaign):
     """
@@ -462,7 +462,7 @@ def campaigns():
 
         # Handle LLM overrides
         llm_prov = request.form.get('llm_provider') or None
-        
+
         llm_mod = request.form.get('llm_model')
         if not llm_mod: llm_mod = None
 
@@ -540,7 +540,7 @@ def edit_campaign(id):
         # Handle LLM overrides
         llm_prov = request.form.get('llm_provider')
         campaign.llm_provider = llm_prov or None
-        
+
         llm_mod = request.form.get('llm_model')
         campaign.llm_model = llm_mod if llm_mod else None
 
