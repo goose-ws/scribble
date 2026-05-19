@@ -75,7 +75,7 @@ Configuration is primarily handled via the Web UI, so only a few environment var
 
 #### NVIDIA GPU (CUDA)
 
-Recommended for faster transcription. Requires the NVIDIA Container Toolkit. This image is about 2.48GB in size, without language transcription models.
+Recommended for faster transcription. Requires the NVIDIA Container Toolkit. This image is about 3.5 GB in size, without language transcription models.
 
 ```yaml
 services:
@@ -109,7 +109,7 @@ services:
 
 #### CPU Only
 
-Use this if you do not have a compatible GPU. Transcription will be significantly slower. This image is about 3.5GB in size, without language transcription models.
+Use this if you do not have a compatible GPU. Transcription will be significantly slower. This image is about 1.8 GB in size, without language transcription models.
 
 ```yaml
 services:
