@@ -38,6 +38,7 @@ COPY --chmod=775 config.py /app
 COPY --chmod=775 database.py /app
 RUN mkdir /app/scripts
 COPY --chmod=775 scripts/db_migrate.py /app/scripts
+COPY --chmod=775 scripts/password_reset.py /app/scripts
 COPY --chmod=775 llm_engine.py /app
 COPY --chmod=775 models.py /app
 COPY --chmod=775 transcription_engine.py /app

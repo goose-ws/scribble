@@ -245,9 +245,17 @@ It is recommended to run Scribble behind a reverse proxy like Nginx for SSL secu
 * View and edit individual User Transcripts.
 * Regenerate summaries or re-run specific pipeline steps.
 * Download Transcripts or Recaps as PDF or Text.
-
-
 * **Archive & Restore**: Keep source files to allow re-processing of old sessions with new models or prompts.
+
+## Troubleshooting
+
+If you forget your password to the web UI, it can be reset via:
+
+```bash
+docker exec -it scribble python /app/scripts/password_reset.py
+```
+
+Once resetting the web UI password, the container must be restarted for the chanage to take effect.
 
 ## License
 
