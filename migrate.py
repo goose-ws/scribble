@@ -2,12 +2,23 @@ import logging
 from sqlalchemy import text
 from app import app, db
 from models import Session, Campaign
+from app import app, db, APP_VERSION
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("migration")
 
-
 def run_migration():
+    from config import load_config, save_config
+
+    # Version check — skip migrations if already at current version
+    config = load_config()
+    last_version = config.get('last_migrated_version')
+    if last_version == APP_VERSION:
+        logger.info(f"Schema already at v{APP_VERSION} — skipping migrations.")
+        return
+
+    logger.info(f"Schema version: {last_version or 'unknown'} → {APP_VERSION}. Running migrations...")
+
     with app.app_context():
 
         # 1. Schema Migrations (Columns)
@@ -218,6 +229,42 @@ def run_migration():
                     except Exception as e:
                         logger.warning(f"Could not add FK constraint: {e}")
                     conn.commit()
+                    
+                # --- Session: session_prompt ---
+                try:
+                    conn.execute(text("SELECT session_prompt FROM session LIMIT 1"))
+                    logger.info("Column 'session_prompt' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_prompt' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_prompt LONGTEXT NULL"))
+                    conn.commit()
+
+                # --- Session: session_username_map ---
+                try:
+                    conn.execute(text("SELECT session_username_map FROM session LIMIT 1"))
+                    logger.info("Column 'session_username_map' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_username_map' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_username_map TEXT NULL"))
+                    conn.commit()
+
+                # --- Session: session_remove_timestamps ---
+                try:
+                    conn.execute(text("SELECT session_remove_timestamps FROM session LIMIT 1"))
+                    logger.info("Column 'session_remove_timestamps' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_remove_timestamps' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_remove_timestamps BOOLEAN NULL"))
+                    conn.commit()
+
+                # --- Session: session_consolidate_lines ---
+                try:
+                    conn.execute(text("SELECT session_consolidate_lines FROM session LIMIT 1"))
+                    logger.info("Column 'session_consolidate_lines' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_consolidate_lines' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_consolidate_lines BOOLEAN NULL"))
+                    conn.commit()
 
         except Exception as e:
             logger.error(f"Error checking/adding columns: {e}")
@@ -238,9 +285,9 @@ def run_migration():
                 logger.info(f"Updated: {camp.name} - {session_obj.original_filename} -> Session #{idx}")
 
         db.session.commit()
-
-        logger.info("Migration Complete.")
-
+        config['last_migrated_version'] = APP_VERSION
+        save_config(config)
+        logger.info(f"Migration complete. Version stored as {APP_VERSION}.")
 
 if __name__ == "__main__":
     run_migration()

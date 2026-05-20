@@ -10,9 +10,7 @@
         padding: 10px;
         resize: vertical;
     }
-    .hover-opacity-100:hover {
-        opacity: 1 !important;
-    }
+    .hover-opacity-100:hover { opacity: 1 !important; }
     #live-indicator {
         display: inline-flex;
         align-items: center;
@@ -22,43 +20,42 @@
         transition: opacity 0.3s;
     }
     #live-indicator .dot {
-        width: 8px;
-        height: 8px;
+        width: 8px; height: 8px;
         border-radius: 50%;
         background: #6c757d;
         animation: none;
     }
-    #live-indicator.active .dot {
-        background: #28a745;
-        animation: pulse 1.4s infinite;
+    #jobAccordion .accordion-body {
+    overflow: hidden;
     }
+
+    #jobAccordion pre {
+        white-space: pre-wrap;
+        word-break: break-all;
+        overflow-wrap: break-word;
+        max-width: 100%;
+    }
+    #live-indicator.active .dot { background: #28a745; animation: pulse 1.4s infinite; }
     #live-indicator.active { color: #28a745; }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.3; }
-    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .inherit-badge { font-size: 0.7rem; vertical-align: middle; }
 </style>
 
 <div class="d-flex justify-content-between align-items-start mb-4">
     <div>
         <div class="d-flex align-items-center gap-2">
-            <h1 class="display-6 mb-0 fw-bold">
-                Session {{ recording_session.session_number }}
-            </h1>
+            <h1 class="display-6 mb-0 fw-bold">Session {{ recording_session.session_number }}</h1>
         </div>
         <div class="text-muted mt-1">
-            <i class="bi bi-calendar3"></i> {{ recording_session.local_time_str }} 
-            <span class="mx-2">|</span> 
+            <i class="bi bi-calendar3"></i> {{ recording_session.local_time_str }}
+            <span class="mx-2">|</span>
             <i class="bi bi-folder2"></i> {{ recording_session.campaign.name }}
-            <span class="mx-2">|</span> 
+            <span class="mx-2">|</span>
             <span class="font-monospace small opacity-75">{{ recording_session.original_filename }}</span>
             <span id="session-status-badge" class="badge ms-2 bg-secondary rounded-pill align-text-top">{{ recording_session.status }}</span>
         </div>
-        <button class="btn btn-sm btn-link text-secondary text-decoration-none align-middle" 
-                type="button" 
-                data-bs-toggle="collapse" 
-                data-bs-target="#editSessionDate" 
-                title="Edit Session Date">
+        <button class="btn btn-sm btn-link text-secondary text-decoration-none align-middle"
+                type="button" data-bs-toggle="collapse" data-bs-target="#editSessionDate" title="Edit Session Date">
             <i class="bi fs-5"><div class="text-muted mt-1"><span class="font-monospace small opacity-75">✏️ Edit Session Date</span></div></i>
         </button>
         <div class="collapse mt-2" id="editSessionDate">
@@ -66,8 +63,7 @@
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-calendar3"></i></span>
                     <input type="datetime-local" name="session_date" class="form-control"
-                           value="{{ recording_session.session_date.strftime('%Y-%m-%dT%H:%M') if recording_session.local_time_str != 'Unknown Date' else '' }}"
-                           title="Edit session date">
+                           value="{{ recording_session.session_date.strftime('%Y-%m-%dT%H:%M') if recording_session.local_time_str != 'Unknown Date' else '' }}">
                 </div>
                 <button class="btn btn-sm btn-success" type="submit">Save</button>
             </form>
@@ -81,56 +77,54 @@
         </button>
     </div>
 
+    <!-- Cleanup Modal -->
     <div class="modal fade" id="cleanupModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-hdd me-2"></i>Clean Up Raw Files?</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>This will delete the raw audio files (<code>.flac</code>, <code>.zip</code>, etc.) from disk for this session.</p>
-                    <p class="text-muted small">The session record, transcript, and recap are kept. This is useful when you've finished processing and want to free up disk space.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <form action="{{ url_for('cleanup_session_files', session_id=recording_session.id) }}" method="POST">
-                        <button type="submit" class="btn btn-warning">Remove Audio Files</button>
-                    </form>
-                </div>
+        <div class="modal-dialog"><div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-hdd me-2"></i>Clean Up Raw Files?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-        </div>
+            <div class="modal-body">
+                <p>This will delete the raw audio files (<code>.flac</code>, <code>.zip</code>, etc.) from disk for this session.</p>
+                <p class="text-muted small">The session record, transcript, and recap are kept.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{{ url_for('cleanup_session_files', session_id=recording_session.id) }}" method="POST">
+                    <button type="submit" class="btn btn-warning">Remove Audio Files</button>
+                </form>
+            </div>
+        </div></div>
     </div>
 
+    <!-- Delete Modal -->
     <div class="modal fade" id="deleteModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Delete Session?</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to delete this session?</p>
-                    <p class="text-danger small">This action cannot be undone.</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <form action="{{ url_for('delete_session', session_id=recording_session.id) }}" method="POST">
-                        <button type="submit" class="btn btn-danger">Delete Permanently</button>
-                    </form>
-                </div>
+        <div class="modal-dialog"><div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Delete Session?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-        </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this session?</p>
+                <p class="text-danger small">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="{{ url_for('delete_session', session_id=recording_session.id) }}" method="POST">
+                    <button type="submit" class="btn btn-danger">Delete Permanently</button>
+                </form>
+            </div>
+        </div></div>
     </div>
 </div>
 
+<!-- Analytics -->
 <div class="card mb-3 shadow-sm">
     <div class="card-header bg-white py-2">
         <strong class="text-muted"><i class="bi bi-bar-chart-fill"></i> Session Analytics</strong>
     </div>
     <div class="card-body py-2">
         <div class="row align-items-center">
-            
             <div class="col-md-4 border-end">
                 <h6 class="text-primary mb-1">AI Generation</h6>
                 <ul class="list-unstyled small mb-0">
@@ -140,7 +134,6 @@
                     <li><strong>Tokens:</strong> {{ llm_stats.get('tokens') if llm_stats.get('tokens') else 'N/A' }}</li>
                 </ul>
             </div>
-
             <div class="col-md-3 border-end">
                 <h6 class="text-success mb-1">Integrations</h6>
                 <div class="small">
@@ -152,16 +145,12 @@
                             <span class="badge bg-secondary">Not Sent</span>
                         {% endif %}
                     </div>
-                    
                     {% if integrations.scripts %}
                         {% for script in integrations.scripts %}
                         <div class="d-flex justify-content-between mb-1">
-                            <span class="text-truncate" style="max-width: 100px;" title="{{ script.name }}">{{ script.name }}:</span>
-                            {% if script.success %}
-                                <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
-                            {% else %}
-                                <span class="badge bg-danger" title="{{ script.detail }}">Fail</span>
-                            {% endif %}
+                            <span class="text-truncate" style="max-width:100px;" title="{{ script.name }}">{{ script.name }}:</span>
+                            {% if script.success %}<span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                            {% else %}<span class="badge bg-danger" title="{{ script.detail }}">Fail</span>{% endif %}
                         </div>
                         {% endfor %}
                     {% else %}
@@ -169,17 +158,14 @@
                     {% endif %}
                 </div>
             </div>
-
             <div class="col-md-5">
                 <div class="table-responsive">
                     <table class="table table-sm table-borderless small mb-0">
-                        <thead>
-                            <tr class="text-muted border-bottom">
-                                <th>Username</th>
-                                <th class="text-end">Processing Time</th>
-                                <th class="text-end">Word Count</th>
-                            </tr>
-                        </thead>
+                        <thead><tr class="text-muted border-bottom">
+                            <th>Username</th>
+                            <th class="text-end">Processing Time</th>
+                            <th class="text-end">Word Count</th>
+                        </tr></thead>
                         <tbody>
                             {% for user, stats in user_metrics.items() %}
                             <tr>
@@ -201,12 +187,116 @@
                     </table>
                 </div>
             </div>
-            
+        </div>
+    </div>
+</div>
+
+<!-- Session Settings -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+        <strong class="text-muted"><i class="bi bi-sliders"></i> Session Settings</strong>
+        <button class="btn btn-sm btn-outline-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#sessionSettingsBody">
+            <i class="bi bi-chevron-down"></i>
+        </button>
+    </div>
+    <div class="collapse" id="sessionSettingsBody">
+        <div class="card-body">
+            <form action="{{ url_for('save_session_settings', session_id=recording_session.id) }}" method="POST">
+
+                <p class="text-muted small mb-3">
+                    These settings override the campaign defaults for this session only.
+                    Values are pre-filled from the campaign — only save if you want a session-specific override.
+                </p>
+
+                <!-- System Prompt -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">
+                        System Prompt
+                        {% if not recording_session.session_prompt %}
+                            <span class="badge bg-secondary inherit-badge">Inheriting from campaign</span>
+                        {% else %}
+                            <span class="badge bg-primary inherit-badge">Session override active</span>
+                        {% endif %}
+                    </label>
+                    <textarea name="session_prompt" class="form-control font-monospace" rows="6">{{ recording_session.session_prompt or recording_session.campaign.system_prompt or '' }}</textarea>
+                </div>
+
+                <!-- Username Renames -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">
+                        Username Renames
+                        {% if not recording_session.session_username_map %}
+                            <span class="badge bg-secondary inherit-badge">Inheriting from campaign</span>
+                        {% else %}
+                            <span class="badge bg-primary inherit-badge">Session override active</span>
+                        {% endif %}
+                    </label>
+                    <div class="form-text mb-2">
+                        Map Discord usernames to player or character names for this session.
+                    </div>
+                    <div id="session-umap-rows"></div>
+                    <button type="button" class="btn btn-sm btn-outline-success mt-1" onclick="addSessionUmapRow()">
+                        <i class="bi bi-plus-circle"></i> Add Mapping
+                    </button>
+                </div>
+
+                <!-- Transcript Options -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Transcript Options</label>
+                    <div class="card bg-light border-0">
+                        <div class="card-body py-2">
+
+                            {% set ts_inherited = recording_session.session_remove_timestamps is none %}
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <div>
+                                    <span class="fw-semibold small">Remove Timestamps</span>
+                                    {% if ts_inherited %}
+                                        <span class="badge bg-secondary inherit-badge ms-1">Inheriting ({{ 'On' if recording_session.campaign.transcript_remove_timestamps else 'Off' }})</span>
+                                    {% else %}
+                                        <span class="badge bg-primary inherit-badge ms-1">Session override</span>
+                                    {% endif %}
+                                </div>
+                                <select name="session_remove_timestamps" class="form-select form-select-sm" style="width:auto;">
+                                    <option value="inherit" {% if ts_inherited %}selected{% endif %}>Inherit ({{ 'On' if recording_session.campaign.transcript_remove_timestamps else 'Off' }})</option>
+                                    <option value="on"  {% if recording_session.session_remove_timestamps == true %}selected{% endif %}>On</option>
+                                    <option value="off" {% if recording_session.session_remove_timestamps == false and not ts_inherited %}selected{% endif %}>Off</option>
+                                </select>
+                            </div>
+
+                            {% set cl_inherited = recording_session.session_consolidate_lines is none %}
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div>
+                                    <span class="fw-semibold small">Consolidate Lines</span>
+                                    {% if cl_inherited %}
+                                        <span class="badge bg-secondary inherit-badge ms-1">Inheriting ({{ 'On' if recording_session.campaign.transcript_consolidate_lines else 'Off' }})</span>
+                                    {% else %}
+                                        <span class="badge bg-primary inherit-badge ms-1">Session override</span>
+                                    {% endif %}
+                                </div>
+                                <select name="session_consolidate_lines" class="form-select form-select-sm" style="width:auto;">
+                                    <option value="inherit" {% if cl_inherited %}selected{% endif %}>Inherit ({{ 'On' if recording_session.campaign.transcript_consolidate_lines else 'Off' }})</option>
+                                    <option value="on"  {% if recording_session.session_consolidate_lines == true %}selected{% endif %}>On</option>
+                                    <option value="off" {% if recording_session.session_consolidate_lines == false and not cl_inherited %}selected{% endif %}>Off</option>
+                                </select>
+                            </div>
+
+                        </div>
+                    </div>
+                    <div class="form-text">Changes take effect on the next "Re-Generate Master Transcript" or "Re-Request Recap".</div>
+                </div>
+
+                <button type="submit" class="btn btn-success btn-sm">
+                    <i class="bi bi-check-lg"></i> Save Session Settings
+                </button>
+
+            </form>
         </div>
     </div>
 </div>
 
 <div class="row">
+    <!-- Left: Transcripts/Recap tabs -->
     <div class="col-lg-7">
         <ul class="nav nav-tabs" id="sessionTabs" role="tablist">
             <li class="nav-item" role="presentation">
@@ -219,47 +309,35 @@
                 <button class="nav-link" id="users-tab" data-bs-toggle="tab" data-bs-target="#users" type="button" role="tab">User Transcripts</button>
             </li>
         </ul>
-        
         <div class="tab-content" id="sessionTabsContent">
-            
             <div class="tab-pane fade show active" id="master" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
                     <div class="card-header bg-light d-flex justify-content-between py-1">
                         <small class="text-muted">Master Transcript (Editable)</small>
-                        <div>
-                            <a href="/session/{{ recording_session.id }}/download/transcript" class="btn btn-sm btn-outline-secondary">Download<i class="bi bi-download"></i></a>
-                        </div>
+                        <a href="/session/{{ recording_session.id }}/download/transcript" class="btn btn-sm btn-outline-secondary">Download <i class="bi bi-download"></i></a>
                     </div>
                     <div class="card-body p-0">
                         <form action="/session/{{ recording_session.id }}/save_master_transcript" method="POST">
                             <textarea name="content" class="editable-textarea border-0 p-3">{{ transcript }}</textarea>
-                            <div class="d-grid p-2">
-                                <button type="submit" class="btn btn-sm btn-success">Save Changes</button>
-                            </div>
+                            <div class="d-grid p-2"><button type="submit" class="btn btn-sm btn-success">Save Changes</button></div>
                         </form>
                     </div>
                 </div>
             </div>
-
             <div class="tab-pane fade" id="recap" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
                     <div class="card-header bg-light d-flex justify-content-between py-1">
                         <small class="text-muted">Recap (Markdown Editable)</small>
-                        <div>
-                            <a href="/session/{{ recording_session.id }}/download/recap" class="btn btn-sm btn-outline-secondary">Download<i class="bi bi-download"></i></a>
-                        </div>
+                        <a href="/session/{{ recording_session.id }}/download/recap" class="btn btn-sm btn-outline-secondary">Download <i class="bi bi-download"></i></a>
                     </div>
                     <div class="card-body p-0">
-                         <form action="/session/{{ recording_session.id }}/save_recap" method="POST">
+                        <form action="/session/{{ recording_session.id }}/save_recap" method="POST">
                             <textarea name="content" class="editable-textarea border-0 p-3">{{ recording_session.summary_text or '' }}</textarea>
-                            <div class="d-grid p-2">
-                                <button type="submit" class="btn btn-sm btn-success">Save Changes</button>
-                            </div>
+                            <div class="d-grid p-2"><button type="submit" class="btn btn-sm btn-success">Save Changes</button></div>
                         </form>
                     </div>
                 </div>
             </div>
-
             <div class="tab-pane fade" id="users" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
                     <div class="card-body p-3">
@@ -270,19 +348,15 @@
                                 <option value="{{ username }}">{{ username }}</option>
                                 {% endfor %}
                             </select>
-                            
                             <div class="btn-group">
-                                <button type="button" class="btn btn-outline-secondary" onclick="downloadCurrentUser()"><i class="bi bi-download">Download</i></button>
-                                <button type="button" class="btn btn-outline-danger" onclick="retranscribeCurrentUser()" title="Requires Original Zip File"><i class="bi bi-mic">Re-Transcribe User</i></button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="downloadCurrentUser()"><i class="bi bi-download"></i> Download</button>
+                                <button type="button" class="btn btn-outline-danger" onclick="retranscribeCurrentUser()"><i class="bi bi-mic"></i> Re-Transcribe User</button>
                             </div>
                         </div>
-
                         <form id="user-edit-form" action="/session/{{ recording_session.id }}/save_user_transcript" method="POST">
                             <input type="hidden" name="username" id="form-username">
                             <textarea name="content" id="user-textarea" class="editable-textarea"></textarea>
-                            <div class="d-grid mt-2">
-                                <button type="submit" class="btn btn-sm btn-success">Save User Transcript</button>
-                            </div>
+                            <div class="d-grid mt-2"><button type="submit" class="btn btn-sm btn-success">Save User Transcript</button></div>
                         </form>
                     </div>
                 </div>
@@ -290,32 +364,29 @@
         </div>
     </div>
 
+    <!-- Right: Jobs + Actions -->
     <div class="col-lg-5">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Processing Steps</h5>
-            <span id="live-indicator">
-                <span class="dot"></span>
-                <span class="label">Idle</span>
-            </span>
+            <span id="live-indicator"><span class="dot"></span><span class="label">Idle</span></span>
         </div>
 
         <div class="accordion" id="jobAccordion">
             {% for job in jobs %}
             <div class="accordion-item" id="job-card-{{ job.id }}">
                 <h2 class="accordion-header">
-                    <button class="accordion-button {% if job.status != 'processing' and job.status != 'error' %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ job.id }}">
+                    <button class="accordion-button {% if job.status != 'processing' and job.status != 'error' %}collapsed{% endif %}"
+                            type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ job.id }}">
                         <div class="d-flex w-100 justify-content-between align-items-center me-3">
                             <span>
-                                <strong class="job-step-name">{{ job.step|title }}</strong>
-                                <span id="job-status-{{ job.id }}" class="badge ms-2 
+                                <strong>{{ job.step|title }}</strong>
+                                <span id="job-status-{{ job.id }}" class="badge ms-2
                                     {% if job.status == 'completed' %}bg-success
                                     {% elif job.status == 'processing' %}bg-warning text-dark
                                     {% elif job.status == 'error' %}bg-danger
-                                    {% else %}bg-secondary{% endif %}">
-                                    {{ job.status }}
-                                </span>
+                                    {% else %}bg-secondary{% endif %}">{{ job.status }}</span>
                             </span>
-                            <small id="job-time-{{ job.id }}" class="text-muted" title="Finished: {{ job.updated_at.strftime('%H:%M:%S') }}">
+                            <small id="job-time-{{ job.id }}" class="text-muted">
                                 <i class="bi bi-stopwatch"></i> {{ job_durations[job.id] }}
                             </small>
                         </div>
@@ -323,7 +394,7 @@
                 </h2>
                 <div id="collapse{{ job.id }}" class="accordion-collapse collapse {% if job.status == 'processing' or job.status == 'error' %}show{% endif %}" data-bs-parent="#jobAccordion">
                     <div class="accordion-body bg-dark text-light p-2">
-                        <pre id="job-logs-{{ job.id }}" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem; margin: 0;">{{ job.logs }}</pre>
+                        <pre id="job-logs-{{ job.id }}" style="max-height:300px;overflow-y:auto;font-size:0.8rem;margin:0;">{{ job.logs }}</pre>
                         <div id="job-retry-{{ job.id }}" class="mt-2 pt-2 border-top border-secondary text-end {% if job.status != 'error' %}d-none{% endif %}">
                             <form method="POST" action="/job/{{ job.id }}/retry" style="display:inline;">
                                 <button type="submit" class="btn btn-sm btn-danger">Retry Step</button>
@@ -337,48 +408,39 @@
 
         <div class="card shadow mb-4 mt-3">
             <div class="card-header bg-warning text-dark py-3">
-                <h6 class="m-0 font-weight-bold"><i class="bi bi-tools"></i> Session Actions</h6>
+                <h6 class="m-0"><i class="bi bi-tools"></i> Session Actions</h6>
             </div>
             <div class="card-body">
                 <div class="d-grid gap-2">
-                    
                     {% set folder_exists = folder_exists_check(recording_session.directory_path, recording_session.original_filename) %}
                     <form method="POST" action="/session/{{ recording_session.id }}/action/retranscribe">
-                        <button type="submit"
-                                class="btn btn-outline-primary w-100 {% if not folder_exists %}disabled{% endif %}"
+                        <button type="submit" class="btn btn-outline-primary w-100 {% if not folder_exists %}disabled{% endif %}"
                                 onclick="return confirm('Warning: Overwrite ALL transcripts?')">
                             <i class="bi bi-mic-fill"></i> Re-Transcribe Session (Full)
                         </button>
                     </form>
-                    {% if not folder_exists %}
-                        <small class="text-danger text-center">Zip file not in archive</small>
-                    {% endif %}
-
+                    {% if not folder_exists %}<small class="text-danger text-center">Zip file not in archive</small>{% endif %}
                     <form method="POST" action="/session/{{ recording_session.id }}/action/rebuild_transcript">
                         <button type="submit" class="btn btn-outline-info w-100">
                             <i class="bi bi-layers-half"></i> Re-Generate Master Transcript
                         </button>
                     </form>
-
                     <form method="POST" action="/session/{{ recording_session.id }}/action/regenerate_summary">
                         <button type="submit" class="btn btn-outline-warning w-100"
                                 onclick="return confirm('Overwrite current recap?')">
                             <i class="bi bi-cpu"></i> Re-Request Recap
                         </button>
                     </form>
-                    
                     <form method="POST" action="/session/{{ recording_session.id }}/action/rerun_scripts">
                         <button type="submit" class="btn btn-outline-secondary w-100">
                             <i class="bi bi-terminal"></i> Re-Run Post Recap Scripts
                         </button>
                     </form>
-
                     <form method="POST" action="/session/{{ recording_session.id }}/action/post_discord">
                         <button type="submit" class="btn btn-outline-primary w-100">
                             <i class="bi bi-discord"></i> Post to Discord
                         </button>
                     </form>
-                    
                     <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#cleanupModal">
                         <i class="bi bi-hdd"></i> Clean Session Files
                     </button>
@@ -393,19 +455,17 @@
     let userDataStore = {{ user_transcripts | tojson }};
 
     function showUserTranscript() {
-        const select     = document.getElementById('user-select');
-        const textarea   = document.getElementById('user-textarea');
+        const select = document.getElementById('user-select');
+        const textarea = document.getElementById('user-textarea');
         const hiddenInput = document.getElementById('form-username');
         const user = select.value;
         hiddenInput.value = user;
         textarea.value = (user && userDataStore[user]) ? userDataStore[user] : '';
     }
-
     function downloadCurrentUser() {
         const user = document.getElementById('user-select').value;
         if (user) window.location.href = `/session/{{ recording_session.id }}/download/user_${user}`;
     }
-
     function retranscribeCurrentUser() {
         const user = document.getElementById('user-select').value;
         if (user && confirm(`Re-transcribe audio for ${user}? This requires the source files.`)) {
@@ -416,65 +476,81 @@
             form.submit();
         }
     }
-
     showUserTranscript();
+
+    // ── Username Map Row Editor ──────────────────────────────────────────────
+    // Effective map: session override if set, otherwise campaign map
+    const effectiveUmap = {% if recording_session.session_username_map or recording_session.campaign.username_map %}{{ (recording_session.session_username_map or recording_session.campaign.username_map) | safe }}{% else %}null{% endif %};
+
+    function addSessionUmapRow(discord='', display='') {
+        const container = document.getElementById('session-umap-rows');
+        const row = document.createElement('div');
+        row.className = 'row g-2 mb-2 umap-row align-items-center';
+        row.innerHTML = `
+            <div class="col-5">
+                <input type="text" name="umap_discord" class="form-control form-control-sm"
+                       placeholder="Discord username" value="${discord.replace(/"/g, '&quot;')}">
+            </div>
+            <div class="col-1 text-center text-muted">→</div>
+            <div class="col-5">
+                <input type="text" name="umap_display" class="form-control form-control-sm"
+                       placeholder="Display name" value="${display.replace(/"/g, '&quot;')}">
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSessionUmapRow(this)">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>`;
+        container.appendChild(row);
+    }
+
+    function removeSessionUmapRow(btn) {
+        btn.closest('.umap-row').remove();
+    }
+
+    // Pre-populate rows from the effective map on page load
+    if (effectiveUmap) {
+        try {
+            Object.entries(effectiveUmap).forEach(([discord, display]) => addSessionUmapRow(discord, display));
+        } catch(e) {
+            console.warn('Could not iterate username map:', e);
+        }
+    }
 
     // ── Live Job Polling ─────────────────────────────────────────────────────
     const SESSION_ID = {{ recording_session.id }};
     const POLL_URL   = `/api/session/${SESSION_ID}/jobs`;
     const POLL_MS    = 2500;
-
-    const STATUS_CLASSES = {
-        'completed':  'bg-success',
-        'processing': 'bg-warning text-dark',
-        'error':      'bg-danger',
-        'pending':    'bg-secondary',
-    };
-
-    const SESSION_STATUS_CLASSES = {
-        'Completed':  'bg-success',
-        'Error':      'bg-danger',
-        'Processing': 'bg-warning text-dark',
-        'Analyzing':  'bg-info text-dark',
-        'Ready':      'bg-primary',
-    };
-
+    const STATUS_CLASSES = { completed:'bg-success', processing:'bg-warning text-dark', error:'bg-danger', pending:'bg-secondary' };
+    const SESSION_STATUS_CLASSES = { Completed:'bg-success', Error:'bg-danger', Processing:'bg-warning text-dark', Analyzing:'bg-info text-dark', Ready:'bg-primary' };
     let pollTimer = null;
+    const jobPrevStatus = {};
 
     function setLiveIndicator(active) {
         const el = document.getElementById('live-indicator');
         el.querySelector('.label').textContent = active ? 'Live' : 'Idle';
         el.classList.toggle('active', active);
     }
-
     function updateSessionBadge(status) {
         const badge = document.getElementById('session-status-badge');
         if (!badge) return;
         badge.className = 'badge ms-2 rounded-pill align-text-top ' + (SESSION_STATUS_CLASSES[status] || 'bg-secondary');
         badge.textContent = status;
     }
-
     function upsertJobCard(job) {
         const accordion = document.getElementById('jobAccordion');
         let card = document.getElementById(`job-card-${job.id}`);
-
         if (!card) {
-            // New job appeared (e.g. summarize queued after transcribe completes)
             card = document.createElement('div');
             card.className = 'accordion-item';
             card.id = `job-card-${job.id}`;
             card.innerHTML = `
                 <h2 class="accordion-header">
-                    <button class="accordion-button" type="button"
-                            data-bs-toggle="collapse" data-bs-target="#collapse${job.id}">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse${job.id}">
                         <div class="d-flex w-100 justify-content-between align-items-center me-3">
-                            <span>
-                                <strong>${job.step.charAt(0).toUpperCase() + job.step.slice(1)}</strong>
-                                <span id="job-status-${job.id}" class="badge ms-2 bg-secondary">${job.status}</span>
-                            </span>
-                            <small id="job-time-${job.id}" class="text-muted">
-                                <i class="bi bi-stopwatch"></i> ${job.duration}
-                            </small>
+                            <span><strong>${job.step.charAt(0).toUpperCase()+job.step.slice(1)}</strong>
+                                <span id="job-status-${job.id}" class="badge ms-2 bg-secondary">${job.status}</span></span>
+                            <small id="job-time-${job.id}" class="text-muted"><i class="bi bi-stopwatch"></i> ${job.duration}</small>
                         </div>
                     </button>
                 </h2>
@@ -490,68 +566,43 @@
                 </div>`;
             accordion.appendChild(card);
         }
-
-        // Status badge
         const statusBadge = document.getElementById(`job-status-${job.id}`);
-        if (statusBadge) {
-            statusBadge.className = 'badge ms-2 ' + (STATUS_CLASSES[job.status] || 'bg-secondary');
-            statusBadge.textContent = job.status;
-        }
-
-        // Duration
+        if (statusBadge) { statusBadge.className = 'badge ms-2 ' + (STATUS_CLASSES[job.status]||'bg-secondary'); statusBadge.textContent = job.status; }
         const timeEl = document.getElementById(`job-time-${job.id}`);
         if (timeEl) timeEl.innerHTML = `<i class="bi bi-stopwatch"></i> ${job.duration}`;
-
-        // Logs — only update DOM if content changed, then auto-scroll if near bottom
         const logsEl = document.getElementById(`job-logs-${job.id}`);
         if (logsEl && logsEl.textContent !== job.logs) {
             const atBottom = logsEl.scrollHeight - logsEl.scrollTop <= logsEl.clientHeight + 40;
             logsEl.textContent = job.logs;
             if (atBottom) logsEl.scrollTop = logsEl.scrollHeight;
         }
-
-        // Retry button
         const retryEl = document.getElementById(`job-retry-${job.id}`);
         if (retryEl) retryEl.classList.toggle('d-none', job.status !== 'error');
-
-        // Accordion — only change state on status transition, not every poll
         const prevStatus = jobPrevStatus[job.id];
         if (prevStatus !== job.status) {
             const collapseEl = document.getElementById(`collapse${job.id}`);
             if (collapseEl) {
                 const bsCollapse = bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false });
-                if (job.status === 'processing' || job.status === 'error') {
-                    bsCollapse.show();
-                } else if (job.status === 'completed' && prevStatus === 'processing') {
-                    bsCollapse.hide();
-                }
+                if (job.status === 'processing' || job.status === 'error') bsCollapse.show();
+                else if (job.status === 'completed' && prevStatus === 'processing') bsCollapse.hide();
             }
             jobPrevStatus[job.id] = job.status;
         }
     }
-
     async function poll() {
         try {
             const resp = await fetch(POLL_URL);
             if (!resp.ok) return;
             const data = await resp.json();
-
             updateSessionBadge(data.session_status);
             data.jobs.forEach(upsertJobCard);
-
             const stillActive = data.jobs.some(j => j.status === 'processing' || j.status === 'pending');
             setLiveIndicator(stillActive);
-
-            // Keep polling while work is in progress; back off on idle
             pollTimer = setTimeout(poll, stillActive ? POLL_MS : POLL_MS * 4);
         } catch (e) {
-            // Network hiccup — retry after a longer delay
             pollTimer = setTimeout(poll, POLL_MS * 4);
         }
     }
-
-    // Start immediately — if everything is already done it runs once,
-    // finds nothing active, sets indicator to Idle, and backs off.
     poll();
 </script>
 {% endblock %}

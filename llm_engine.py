@@ -525,7 +525,7 @@ def run_summary(job, config, post_to_discord_enabled=True):
     with open(transcript_path, 'r', encoding='utf-8', errors='replace') as f:
         raw_transcript = f.read()
 
-    processed_transcript = apply_transcript_options(raw_transcript, session.campaign)
+    processed_transcript = apply_transcript_options(raw_transcript, session.campaign, session=session)
 
     effective_transcript_path = None  # initialized here so finally can always reference it
     recap_context_path = None
@@ -543,7 +543,7 @@ def run_summary(job, config, post_to_discord_enabled=True):
         else:
             effective_transcript_path = transcript_path
 
-        prompt = session.campaign.system_prompt
+        prompt = session.effective_prompt()
         if not prompt:
             prompt = "Summarize this DnD session."
 

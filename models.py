@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlalchemy.dialects.mysql import LONGTEXT
 
 
-# Helper to create a column that is TEXT in SQLite/Postgres but LONGTEXT in MariaDB/MySQL
 def LargeText():
     return db.Text().with_variant(LONGTEXT, "mysql").with_variant(LONGTEXT, "mariadb")
 
@@ -19,7 +18,6 @@ class Campaign(db.Model):
     recap_context_count = db.Column(db.Integer, default=3)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # --- Whisper overrides (None = inherit global setting) ---
     whisper_model = db.Column(db.String(50), nullable=True)
     whisper_threads = db.Column(db.Integer, nullable=True)
     whisper_batch_size = db.Column(db.Integer, nullable=True)
@@ -28,19 +26,15 @@ class Campaign(db.Model):
     whisper_language = db.Column(db.String(10), nullable=True)
     whisper_initial_prompt = db.Column(db.String(500), nullable=True)
 
-    # --- VAD overrides (None = inherit global setting) ---
     vad_method = db.Column(db.String(20), nullable=True)
     vad_onset = db.Column(db.Float, nullable=True)
     vad_offset = db.Column(db.Float, nullable=True)
 
-    # --- LLM overrides (None = inherit global setting) ---
     llm_provider = db.Column(db.String(50), nullable=True)
     llm_model = db.Column(db.String(100), nullable=True)
     llm_input_cost = db.Column(db.Float, nullable=True)
     llm_output_cost = db.Column(db.Float, nullable=True)
 
-    # --- Transcript Processing ---
-    # JSON object mapping Discord username -> display name, e.g. {"CoolGamer": "Gandalf (DM)"}
     username_map = db.Column(db.Text, nullable=True)
     transcript_remove_timestamps = db.Column(db.Boolean, default=False)
     transcript_consolidate_lines = db.Column(db.Boolean, default=False)
@@ -61,8 +55,30 @@ class Session(db.Model):
     transcript_text = db.Column(LargeText(), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Session-level overrides (None = inherit from campaign)
+    session_prompt = db.Column(LargeText(), nullable=True)
+    session_username_map = db.Column(db.Text, nullable=True)
+    session_remove_timestamps = db.Column(db.Boolean, nullable=True)
+    session_consolidate_lines = db.Column(db.Boolean, nullable=True)
+
     jobs = db.relationship('Job', backref='session', lazy=True, cascade="all, delete-orphan")
     transcripts = db.relationship('Transcript', backref='session', lazy=True, cascade="all, delete-orphan")
+
+    def effective_prompt(self):
+        return self.session_prompt or (self.campaign.system_prompt if self.campaign else None)
+
+    def effective_username_map(self):
+        return self.session_username_map or (self.campaign.username_map if self.campaign else None)
+
+    def effective_remove_timestamps(self):
+        if self.session_remove_timestamps is not None:
+            return self.session_remove_timestamps
+        return self.campaign.transcript_remove_timestamps if self.campaign else False
+
+    def effective_consolidate_lines(self):
+        if self.session_consolidate_lines is not None:
+            return self.session_consolidate_lines
+        return self.campaign.transcript_consolidate_lines if self.campaign else False
 
 
 class Transcript(db.Model):

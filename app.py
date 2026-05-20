@@ -33,39 +33,44 @@ app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_
 
 APP_VERSION = '4.3.2'
 
-def apply_transcript_options(text, campaign):
+def apply_transcript_options(text, campaign, session=None):
     """
-    Apply per-campaign transcript processing options to a transcript string.
-
-    Steps (each gated by the campaign's settings):
-      1. Rename Discord usernames to display names via campaign.username_map (JSON dict).
-      2. Strip [HH:MM:SS] timestamps from every line.
-      3. Consolidate consecutive lines from the same speaker into one line.
+    Apply transcript processing options, with session-level overrides
+    taking precedence over campaign settings when set.
     """
     if not text:
         return text
 
-    # 1. Username renaming -------------------------------------------------
-    if campaign.username_map:
+    # Resolve effective values: session override > campaign setting
+    if session is not None:
+        effective_map       = session.effective_username_map()
+        remove_timestamps   = session.effective_remove_timestamps()
+        consolidate_lines   = session.effective_consolidate_lines()
+    else:
+        effective_map       = campaign.username_map if campaign else None
+        remove_timestamps   = campaign.transcript_remove_timestamps if campaign else False
+        consolidate_lines   = campaign.transcript_consolidate_lines if campaign else False
+
+    # 1. Username renaming
+    if effective_map:
         try:
-            umap = json.loads(campaign.username_map)
+            umap = json.loads(effective_map)
             for discord_name, display_name in umap.items():
                 if discord_name and display_name:
-                    # Replace username in "username:" patterns (with optional leading timestamp)
                     text = re.sub(
                         r'(?m)^(\[\d{2}:\d{2}:\d{2}\]\s*)?' + re.escape(discord_name) + r'(?=:)',
                         lambda m: (m.group(1) or '') + display_name,
                         text
                     )
         except Exception:
-            pass  # Malformed JSON — skip renaming silently
+            pass
 
-    # 2. Remove timestamps -------------------------------------------------
-    if campaign.transcript_remove_timestamps:
+    # 2. Remove timestamps
+    if remove_timestamps:
         text = re.sub(r'^\[\d{2}:\d{2}:\d{2}\]\s*', '', text, flags=re.MULTILINE)
 
-    # 3. Consolidate consecutive lines by speaker --------------------------
-    if campaign.transcript_consolidate_lines:
+    # 3. Consolidate consecutive lines by speaker
+    if consolidate_lines:
         speaker_re = re.compile(r'^(?:\[\d{2}:\d{2}:\d{2}\]\s*)?([^:\n]+):\s*(.*)')
         lines = text.split('\n')
         consolidated = []
@@ -923,7 +928,49 @@ def upload():
             if os.path.exists(upload_dir): shutil.rmtree(upload_dir)
             return jsonify({'error': str(e)}), 500
 
+@app.route('/session/<int:session_id>/save_settings', methods=['POST'])
+@login_required
+def save_session_settings(session_id):
+    session_obj = Session.query.get_or_404(session_id)
+    campaign = session_obj.campaign
 
+    # --- System Prompt ---
+    submitted_prompt = request.form.get('session_prompt', '').strip()
+    if not submitted_prompt or submitted_prompt == (campaign.system_prompt or '').strip():
+        session_obj.session_prompt = None   # identical to campaign → inherit
+    else:
+        session_obj.session_prompt = submitted_prompt
+
+    # --- Username Map (built from umap_discord / umap_display row pairs) ---
+    discord_names = request.form.getlist('umap_discord')
+    display_names = request.form.getlist('umap_display')
+    umap = {d.strip(): v.strip() for d, v in zip(discord_names, display_names)
+            if d.strip() and v.strip()}
+
+    if umap:
+        submitted_map = json.dumps(umap, ensure_ascii=False)
+        # If identical to the campaign map, treat as inherit
+        try:
+            campaign_map = json.loads(campaign.username_map) if campaign.username_map else {}
+        except Exception:
+            campaign_map = {}
+        session_obj.session_username_map = None if umap == campaign_map else submitted_map
+    else:
+        session_obj.session_username_map = None
+
+    # --- Tri-state selects (inherit / on / off) ---
+    for field in ('session_remove_timestamps', 'session_consolidate_lines'):
+        val = request.form.get(field, 'inherit')
+        if val == 'on':
+            setattr(session_obj, field, True)
+        elif val == 'off':
+            setattr(session_obj, field, False)
+        else:
+            setattr(session_obj, field, None)
+
+    db.session.commit()
+    flash('Session settings saved.', 'success')
+    return redirect(url_for('session_detail', session_id=session_id))
 
 @app.route('/session/<int:session_id>/update_date', methods=['POST'])
 @login_required
