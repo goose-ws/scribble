@@ -17,11 +17,22 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 def get_archive_path(campaign_name, session_date):
     """Generate a unique archive path: '[Campaign] - YYYY-MM-DD.zip', with -2/-3 suffix on collision."""
+    import pytz
     archive_dir = '/data/archive'
     safe_name = re.sub(r'[^\w\s\-]', '', campaign_name).strip()
-    date_str = session_date.strftime('%Y-%m-%d') if session_date else datetime.now().strftime('%Y-%m-%d')
-    base = f"{safe_name} - {date_str}"
 
+    if session_date:
+        target_tz_str = os.environ.get('TZ', 'UTC')
+        try:
+            local_tz = pytz.timezone(target_tz_str)
+            utc_dt = session_date.replace(tzinfo=pytz.utc)
+            date_str = utc_dt.astimezone(local_tz).strftime('%Y-%m-%d')
+        except Exception:
+            date_str = session_date.strftime('%Y-%m-%d')
+    else:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+
+    base = f"{safe_name} - {date_str}"
     candidate = os.path.join(archive_dir, f"{base}.zip")
     if not os.path.exists(candidate):
         return candidate

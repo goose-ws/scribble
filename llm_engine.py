@@ -123,9 +123,22 @@ def build_recap_context_file(session, config):
 
     prior_sessions = list(reversed(prior_sessions))
 
+    target_tz_str = os.environ.get('TZ', 'UTC')
+    try:
+        local_tz = pytz.timezone(target_tz_str)
+    except Exception:
+        local_tz = None
+
     lines = ["=== Previous Session Recaps ==="]
     for s in prior_sessions:
-        date_str = s.session_date.strftime('%B %d, %Y')
+        try:
+            if local_tz:
+                utc_dt = s.session_date.replace(tzinfo=pytz.utc)
+                date_str = utc_dt.astimezone(local_tz).strftime('%B %-d, %Y')
+            else:
+                date_str = s.session_date.strftime('%B %d, %Y')
+        except Exception:
+            date_str = s.session_date.strftime('%B %d, %Y')
         lines.append(f"\n--- Session {s.session_number} ({date_str}) ---\n")
         lines.append(s.summary_text.strip())
 
@@ -669,20 +682,26 @@ def run_summary(job, config, post_to_discord_enabled=True):
 
 def run_discord_post(job, config):
     session = Session.query.get(job.session_id)
-    
+
     if not session.summary_text:
         recap_path = os.path.join(session.directory_path, "session_recap.txt")
         if os.path.exists(recap_path):
             with open(recap_path, 'r', encoding='utf-8') as f:
                 session.summary_text = f.read()
         else:
-             raise Exception("No summary text found to post.")
+            raise Exception("No summary text found to post.")
 
     if not session.campaign.discord_webhook:
         raise Exception("No Discord Webhook configured for this campaign.")
 
-    formatted_date = session.session_date.strftime("%B %-d, %Y")
-    
+    target_tz_str = os.environ.get('TZ', 'UTC')
+    try:
+        local_tz = pytz.timezone(target_tz_str)
+        utc_dt = session.session_date.replace(tzinfo=pytz.utc)
+        formatted_date = utc_dt.astimezone(local_tz).strftime("%B %-d, %Y")
+    except Exception:
+        formatted_date = session.session_date.strftime("%B %d, %Y")
+
     job.logs += f"\nPosting existing summary to Discord..."
     send_discord(session.summary_text, session.campaign.discord_webhook, formatted_date, session.id)
     job.logs += " Sent."
