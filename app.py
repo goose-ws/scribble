@@ -31,7 +31,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.3.6'
+APP_VERSION = '4.3.7'
 
 def apply_transcript_options(text, campaign, session=None):
     """
@@ -567,15 +567,15 @@ def edit_campaign(id):
         campaign.whisper_language      = _nstr(request.form.get('whisper_language'))
         campaign.whisper_initial_prompt = _nstr(request.form.get('whisper_initial_prompt'))
         cond = request.form.get('whisper_condition_on_previous_text')
-        if cond == 'true': 
+        if cond == 'true':
             campaign.whisper_condition_on_previous_text = True
-        elif cond == 'false': 
+        elif cond == 'false':
             campaign.whisper_condition_on_previous_text = False
-        else: 
+        else:
             campaign.whisper_condition_on_previous_text = None
         campaign.whisper_compression_ratio_threshold = _nfloat(request.form.get('whisper_compression_ratio_threshold'))
         campaign.whisper_no_speech_threshold = _nfloat(request.form.get('whisper_no_speech_threshold'))
-        
+
         campaign.vad_min_silence_ms = _nfloat(request.form.get('vad_min_silence_ms'))
         campaign.vad_max_speech_s = _nfloat(request.form.get('vad_max_speech_s'))
         campaign.vad_method            = _nstr(request.form.get('vad_method'))
