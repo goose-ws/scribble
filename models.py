@@ -25,10 +25,15 @@ class Campaign(db.Model):
     whisper_compute_type = db.Column(db.String(20), nullable=True)
     whisper_language = db.Column(db.String(10), nullable=True)
     whisper_initial_prompt = db.Column(db.String(500), nullable=True)
+    whisper_condition_on_previous_text = db.Column(db.Boolean, nullable=True)
+    whisper_compression_ratio_threshold = db.Column(db.Float, nullable=True)
+    whisper_no_speech_threshold = db.Column(db.Float, nullable=True)
 
     vad_method = db.Column(db.String(20), nullable=True)
     vad_onset = db.Column(db.Float, nullable=True)
     vad_offset = db.Column(db.Float, nullable=True)
+    vad_min_silence_ms = db.Column(db.Float, nullable=True)
+    vad_max_speech_s = db.Column(db.Float, nullable=True)
 
     llm_provider = db.Column(db.String(50), nullable=True)
     llm_model = db.Column(db.String(100), nullable=True)

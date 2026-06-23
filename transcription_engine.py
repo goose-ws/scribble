@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 # --- Custom Log Handler ---
 class DBLogHandler(logging.Handler):
-    FLUSH_EVERY = 10  # write to DB once per 10 log lines
+    FLUSH_EVERY = 1 # write to DB once per log line
 
     def __init__(self, job_id, app):
         super().__init__()

@@ -266,6 +266,25 @@ def run_migration():
                     conn.execute(text("ALTER TABLE session ADD COLUMN session_consolidate_lines BOOLEAN NULL"))
                     conn.commit()
 
+                # --- Campaign: New VAD Settings ---
+                try:
+                    conn.execute(text("SELECT vad_min_silence_ms FROM campaign LIMIT 1"))
+                    logger.info("New VAD columns already exist in Campaign.")
+                except Exception:
+                    logger.info("Adding new VAD columns to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN vad_min_silence_ms FLOAT NULL"))
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN vad_max_speech_ms FLOAT NULL"))
+                    conn.commit()
+
+                # --- Campaign: New VAD Settings (Fix for _s) ---
+                try:
+                    conn.execute(text("SELECT vad_max_speech_s FROM campaign LIMIT 1"))
+                    logger.info("Column 'vad_max_speech_s' already exists in Campaign.")
+                except Exception:
+                    logger.info("Adding 'vad_max_speech_s' column to Campaign...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN vad_max_speech_s FLOAT NULL"))
+                    conn.commit()
+
         except Exception as e:
             logger.error(f"Error checking/adding columns: {e}")
 

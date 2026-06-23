@@ -29,11 +29,16 @@ DEFAULT_CONFIG = {
     "whisper_compute_type": "int8",
     "whisper_language": "en",
     "whisper_initial_prompt": "",
+    "whisper_condition_on_previous_text": False,
+    "whisper_compression_ratio_threshold": 2.4,
+    "whisper_no_speech_threshold": 0.6,
     "hf_token": "",
     # VAD
     "vad_method": "silero",
     "vad_onset": 0.5,
     "vad_min_speech_ms": 0.363,
+    "vad_min_silence_ms": 500,
+    "vad_max_speech_s": 10.0,
     # LLM
     "llm_provider": "Google",
     "llm_model": "gemini-flash-latest",
@@ -187,17 +192,19 @@ def get_effective_config(global_config, campaign):
         _resolve_effective_costs(effective)
         return effective
 
-    # --- Whisper overrides ---
+    # Update the Whisper overrides block
     for field in (
         'whisper_model', 'whisper_threads', 'whisper_batch_size',
         'whisper_beam_size', 'whisper_compute_type', 'whisper_language',
+        'whisper_condition_on_previous_text', 'whisper_compression_ratio_threshold', 
+        'whisper_no_speech_threshold'
     ):
         val = getattr(campaign, field, None)
         if val is not None:
             effective[field] = val
 
-    # --- VAD overrides ---
-    for field in ('vad_method', 'vad_onset'):
+    # Update the VAD overrides block
+    for field in ('vad_method', 'vad_onset', 'vad_min_silence_ms', 'vad_max_speech_s'):
         val = getattr(campaign, field, None)
         if val is not None:
             effective[field] = val

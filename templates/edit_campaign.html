@@ -97,7 +97,6 @@
                 </div>
             </div>
 
-            <!-- Whisper Overrides -->
             <div class="card mb-3 border-secondary">
                 <div class="card-header bg-secondary text-white">
                     <i class="bi bi-mic"></i> Whisper Overrides
@@ -135,7 +134,7 @@
                                    value="{{ campaign.whisper_beam_size if campaign.whisper_beam_size is not none else '' }}"
                                    placeholder="{{ config.whisper_beam_size }}">
                         </div>
-                        <div class="col-md-12">
+                        <div class="col-md-4">
                             <label class="form-label">Compute Type</label>
                             <select name="whisper_compute_type" class="form-select">
                                 <option value="" {% if not campaign.whisper_compute_type %}selected{% endif %}>— Inherit Global ({{ config.whisper_compute_type }}) —</option>
@@ -144,18 +143,37 @@
                                 <option value="int8"    {% if campaign.whisper_compute_type == 'int8'    %}selected{% endif %}>int8</option>
                             </select>
                         </div>
-                        <div class="col-12">
+                        <div class="col-md-4">
+                            <label class="form-label">No-Speech Threshold</label>
+                            <input type="number" step="0.01" min="0" max="1" name="whisper_no_speech_threshold" class="form-control"
+                                   value="{{ campaign.whisper_no_speech_threshold if campaign.whisper_no_speech_threshold is not none else '' }}"
+                                   placeholder="{{ config.whisper_no_speech_threshold }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Compression Ratio</label>
+                            <input type="number" step="0.1" min="0" name="whisper_compression_ratio_threshold" class="form-control"
+                                   value="{{ campaign.whisper_compression_ratio_threshold if campaign.whisper_compression_ratio_threshold is not none else '' }}"
+                                   placeholder="{{ config.whisper_compression_ratio_threshold }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Condition on Previous</label>
+                            <select name="whisper_condition_on_previous_text" class="form-select">
+                                <option value="" {% if campaign.whisper_condition_on_previous_text is none %}selected{% endif %}>— Inherit ({{ config.whisper_condition_on_previous_text }}) —</option>
+                                <option value="true" {% if campaign.whisper_condition_on_previous_text == True %}selected{% endif %}>True</option>
+                                <option value="false" {% if campaign.whisper_condition_on_previous_text == False %}selected{% endif %}>False</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
                             <label class="form-label">Initial Prompt</label>
                             <input type="text" name="whisper_initial_prompt" class="form-control"
                                    value="{{ campaign.whisper_initial_prompt or '' }}"
                                    placeholder="Inherit global ({{ config.whisper_initial_prompt or 'none' }})">
-                            <div class="form-text">Vocabulary hints fed to Whisper before transcription, e.g. proper nouns, character names.</div>
+                            <div class="form-text">Vocabulary hints fed to Whisper before transcription.</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- VAD Overrides -->
             <div class="card mb-3 border-info">
                 <div class="card-header bg-info text-white">
                     <i class="bi bi-soundwave"></i> VAD Overrides
@@ -178,11 +196,25 @@
                             <div class="form-text">Sensitivity to speech start (0–1).</div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Offset Threshold</label>
-                            <input type="number" step="0.001" min="0" max="1" name="vad_min_speech_ms" class="form-control"
+                            <label class="form-label">Min Speech Duration (ms)</label>
+                            <input type="number" step="0.001" min="0" name="vad_offset" class="form-control"
                                    value="{{ campaign.vad_offset if campaign.vad_offset is not none else '' }}"
-                                   placeholder="{{ config.vad_offset }}">
-                            <div class="form-text">Sensitivity to speech end (0–1).</div>
+                                   placeholder="{{ config.vad_min_speech_ms }}">
+                            <div class="form-text">Minimum duration to count as speech.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Min Silence (ms)</label>
+                            <input type="number" step="1" min="0" name="vad_min_silence_ms" class="form-control"
+                                   value="{{ campaign.vad_min_silence_ms if campaign.vad_min_silence_ms is not none else '' }}"
+                                   placeholder="{{ config.vad_min_silence_ms }}">
+                            <div class="form-text">Minimum silence to trigger a segment split.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Max Speech (s)</label>
+                            <input type="number" step="0.5" min="0" name="vad_max_speech_s" class="form-control"
+                                   value="{{ campaign.vad_max_speech_s if campaign.vad_max_speech_s is not none else '' }}"
+                                   placeholder="{{ config.vad_max_speech_s }}">
+                            <div class="form-text">Forces a split after this many seconds of speech.</div>
                         </div>
                     </div>
                 </div>
