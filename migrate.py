@@ -13,6 +13,7 @@ def run_migration():
     # Version check — skip migrations if already at current version
     config = load_config()
     last_version = config.get('last_migrated_version')
+    
     if last_version == APP_VERSION:
         logger.info(f"Schema already at v{APP_VERSION} — skipping migrations.")
         return
@@ -158,6 +159,33 @@ def run_migration():
                 except Exception:
                     logger.info("Adding 'whisper_initial_prompt' column to Campaign...")
                     conn.execute(text("ALTER TABLE campaign ADD COLUMN whisper_initial_prompt VARCHAR(500) NULL"))
+                    conn.commit()
+                    
+                # --- Campaign: Whisper Condition ---
+                try:
+                    conn.execute(text("SELECT whisper_condition_on_previous_text FROM campaign LIMIT 1"))
+                    logger.info("Column 'whisper_condition_on_previous_text' already exists.")
+                except Exception:
+                    logger.info("Adding 'whisper_condition_on_previous_text' column...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN whisper_condition_on_previous_text BOOLEAN NULL"))
+                    conn.commit()
+
+                # --- Campaign: Whisper Compression ---
+                try:
+                    conn.execute(text("SELECT whisper_compression_ratio_threshold FROM campaign LIMIT 1"))
+                    logger.info("Column 'whisper_compression_ratio_threshold' already exists.")
+                except Exception:
+                    logger.info("Adding 'whisper_compression_ratio_threshold' column...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN whisper_compression_ratio_threshold FLOAT NULL"))
+                    conn.commit()
+
+                # --- Campaign: Whisper No Speech ---
+                try:
+                    conn.execute(text("SELECT whisper_no_speech_threshold FROM campaign LIMIT 1"))
+                    logger.info("Column 'whisper_no_speech_threshold' already exists.")
+                except Exception:
+                    logger.info("Adding 'whisper_no_speech_threshold' column...")
+                    conn.execute(text("ALTER TABLE campaign ADD COLUMN whisper_no_speech_threshold FLOAT NULL"))
                     conn.commit()
 
                 # --- Campaign: vad_method ---
