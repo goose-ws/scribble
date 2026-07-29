@@ -6,7 +6,7 @@ Werkzeug==3.1.8
 bcrypt==5.0.0
 requests==2.34.2
 Flask-SQLAlchemy==3.1.1
-pytz==2026.2
+pytz==2026.3.post1
 psycopg2-binary==2.9.12
 PyMySQL==1.2.0
 markdown==3.10.2
