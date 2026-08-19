@@ -11,20 +11,32 @@ from database import db
 from models import LLMLog, DiscordLog, Session
 from string import Template
 
+# --- ERRORS ---
+
+class SummaryGenerationError(Exception):
+    """
+    Raised for expected, already-diagnosed failures (e.g. we've exhausted our
+    retries on a transient provider outage). The message is written to be
+    read as-is by a human, so callers should surface str(e) directly instead
+    of a full traceback.
+    """
+    pass
+
+
 # --- HELPER FUNCTIONS ---
 
 def calculate_cost(prompt_tokens, completion_tokens, config):
     try:
         input_cost_str = str(config.get('llm_input_cost', '0')).strip()
         output_cost_str = str(config.get('llm_output_cost', '0')).strip()
-
+        
         def safe_float(val):
             try: return float(val)
             except ValueError: return 0.0
 
         input_cost_per_m = safe_float(input_cost_str)
         output_cost_per_m = safe_float(output_cost_str)
-
+        
         cost = (prompt_tokens * input_cost_per_m / 1_000_000) + \
                (completion_tokens * output_cost_per_m / 1_000_000)
         return round(cost, 6)
@@ -38,16 +50,27 @@ def clean_markdown(text):
     text = re.sub(r'^#{4,}\s*', '### ', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\*\*\*\s*$', DIVIDER, text, flags=re.MULTILINE)
     text = re.sub(r'\s*' + re.escape(DIVIDER) + r'\s*', f'\n\n{DIVIDER}\n\n', text)
-
+    
     return text.strip()
 
 def format_duration(seconds):
     return f"{seconds:.3f}s"
 
+def format_wait(seconds):
+    """Human-readable form of a retry delay, e.g. 45 -> '45s', 300 -> '5m', 3600 -> '1h'."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs}s" if secs else f"{minutes}m"
+    hours, mins = divmod(minutes, 60)
+    return f"{hours}h{mins}m" if mins else f"{hours}h"
+
 def log_llm_request(provider, model, usage, timing, req_data, res_data, status, finish_reason, config):
     req_str = json.dumps(req_data)
     res_str = json.dumps(res_data)
-
+    
     if config.get('db_space_saver'):
         if 'contents' in req_data:
             try:
@@ -59,7 +82,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
 
         try:
             items = res_data if isinstance(res_data, list) else [res_data]
-
+            
             data_modified = False
             for item in items:
                 if 'candidates' in item:
@@ -69,7 +92,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
                                 if 'thought' in part:
                                     part['thought'] = "[TRUNCATED]"
                                     data_modified = True
-
+            
             if data_modified:
                 res_str = json.dumps(res_data)
         except Exception:
@@ -160,9 +183,9 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     api_key = config.get('google_api_key')
     if not api_key:
         raise Exception("Google API Key is missing. Please configure it in Settings.")
-
+        
     model = config['active_llm_model']
-
+    
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
 
@@ -180,11 +203,11 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     }
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={api_key}"
-
+    
     start_time = time.time()
     response = requests.post(url, json=payload)
     duration = time.time() - start_time
-
+    
     try:
         res_json = response.json()
     except:
@@ -258,23 +281,23 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
     api_key = config.get('anthropic_api_key')
     if not api_key:
         raise Exception("Anthropic API Key is missing. Please configure it in Settings.")
-
+        
     model = config['active_llm_model']
-
+    
     files_url = "https://api.anthropic.com/v1/files"
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "files-api-2025-04-14"
     }
-
+    
     with open(transcript_path, 'rb') as f:
         file_response = requests.post(files_url, headers=headers,
                                       files={"file": (os.path.basename(transcript_path), f, "text/plain")})
-
+    
     if file_response.status_code not in [200, 201]:
          raise Exception(f"Anthropic File Upload Failed: {file_response.text}")
-
+         
     file_id = file_response.json().get('id')
 
     recap_file_id = None
@@ -300,7 +323,7 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": content}]
     }
-
+    
     try:
         start_time = time.time()
         response = requests.post(msg_url, headers=headers, json=payload)
@@ -425,13 +448,13 @@ def send_openai(prompt, transcript_path, config, recap_context_path=None):
 def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     base_url = config.get('ollama_url') or os.environ.get("OLLAMA_URL", "http://ollama:11434")
     model = config['active_llm_model']
-
+    
     if not base_url.startswith('http'):
         base_url = f"http://{base_url}"
     base_url = base_url.rstrip('/')
-
+    
     url = f"{base_url}/v1/chat/completions"
-
+    
     with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
         file_content = f.read()
 
@@ -442,7 +465,7 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
         recap_section = f"\n\n### previous_recaps.txt\n{recap_content}"
 
     combined_content = f"{prompt}\n\n### {os.path.basename(transcript_path)}\n{file_content}{recap_section}"
-
+    
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": combined_content}],
@@ -452,22 +475,22 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     start_time = time.time()
     response = requests.post(url, json=payload)
     duration = time.time() - start_time
-
+    
     res_json = response.json()
-
+    
     usage_data = res_json.get('usage', {})
     usage = {
         'prompt': usage_data.get('prompt_tokens', 0),
         'completion': usage_data.get('completion_tokens', 0),
         'total': usage_data.get('total_tokens', 0)
     }
-
+    
     full_text = res_json.get('choices', [{}])[0].get('message', {}).get('content', '')
     finish_reason = res_json.get('choices', [{}])[0].get('finish_reason', 'unknown')
     returned_model = res_json.get('model', model)
 
     log_llm_request('Ollama', returned_model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
-
+    
     stats = {
         'provider': 'Ollama',
         'model': returned_model,
@@ -482,12 +505,12 @@ def send_discord_request(url, payload, session_id=None):
     try:
         response = requests.post(url, json=payload)
         duration = time.time() - start_time
-
+        
         try:
             res_json = response.json()
         except:
             res_json = {"body": response.text}
-
+            
         log = DiscordLog(
             session_id=session_id,
             message_id=str(res_json.get('id', '')),
@@ -500,7 +523,7 @@ def send_discord_request(url, payload, session_id=None):
         )
         db.session.add(log)
         db.session.commit()
-
+        
         return response
     except Exception as e:
         logging.error(f"Discord Request Failed: {e}")
@@ -513,16 +536,16 @@ def send_discord_request(url, payload, session_id=None):
 def send_discord(summary_text, webhook_url, title_date, session_id=None):
     if not webhook_url:
         return
-
+        
     title = f"{title_date} Session Recap"
-
+    
     start_payload = {
         "content": f"# {title}",
         "thread_name": title
     }
-
+    
     res = send_discord_request(f"{webhook_url}?wait=true", start_payload, session_id)
-
+    
     if res.status_code not in [200, 201, 204]:
         logging.error(f"Discord Thread Creation Failed: {res.text}")
         thread_webhook = webhook_url
@@ -534,10 +557,10 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
             thread_webhook = webhook_url
 
     paragraphs = summary_text.split('\n\n')
-
+    
     for p in paragraphs:
         if not p.strip(): continue
-
+        
         if len(p) > 1900:
             chunks = [p[i:i+1900] for i in range(0, len(p), 1900)]
             for chunk in chunks:
@@ -623,10 +646,13 @@ def run_summary(job, config, post_to_discord_enabled=True):
             job.logs += f"\nWarning: Could not build recap context ({e}). Continuing without it."
 
         RETRYABLE = ('503', '429', 'UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'Too Many Requests', 'overloaded')
-        RETRY_DELAYS = [60, 300, 600, 900, 1200]
-        MAX_RETRIES = 5
+        # Backoff schedule for transient provider errors (overload/rate-limit).
+        # One entry per retry — the Nth retry waits RETRY_DELAYS[N-1] before
+        # trying again. Caps out at 1 hour between attempts.
+        RETRY_DELAYS = [30, 60, 120, 300, 600, 1200, 1800, 3600]
+        MAX_ATTEMPTS = len(RETRY_DELAYS) + 1  # initial attempt + one per delay
 
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 if provider == 'Google':
                     summary, stats = send_google(prompt, effective_transcript_path, config, recap_context_path)
@@ -643,12 +669,29 @@ def run_summary(job, config, post_to_discord_enabled=True):
             except Exception as e:
                 err_str = str(e)
                 is_retryable = any(code in err_str for code in RETRYABLE)
-                if is_retryable and attempt < MAX_RETRIES:
+                if is_retryable and attempt < MAX_ATTEMPTS:
                     delay = RETRY_DELAYS[attempt - 1]
-                    job.logs += f"\n[Retry {attempt}/{MAX_RETRIES}] Transient error, waiting {delay}s before retry...\n  → {err_str[:300]}"
+                    job.logs += (
+                        f"\n[Retry {attempt}/{len(RETRY_DELAYS)}] Transient error, "
+                        f"waiting {format_wait(delay)} before retry...\n  → {err_str[:300]}"
+                    )
                     db.session.commit()
                     time.sleep(delay)
+                elif is_retryable:
+                    # Exhausted every retry on a known-transient error (provider
+                    # overload/rate limit). This isn't a bug — raise a clean,
+                    # already-diagnosed error instead of letting the original
+                    # exception propagate as a raw traceback.
+                    total_wait = format_wait(sum(RETRY_DELAYS))
+                    raise SummaryGenerationError(
+                        f"{provider} is still reporting a transient error after {MAX_ATTEMPTS} attempts "
+                        f"(~{total_wait} of retries spread out). This is usually provider-side overload/rate "
+                        f"limiting, not a bug — it should resolve on its own; try regenerating later.\n"
+                        f"  Last error: {err_str[:300]}"
+                    ) from None
                 else:
+                    # Not a known-transient error — let it propagate as-is so
+                    # the real cause (and traceback) is preserved for debugging.
                     raise
 
         target_tz_str = os.environ.get('TZ', 'UTC')

@@ -292,9 +292,22 @@ class JobManager(threading.Thread):
                 return
 
         except Exception as e:
+            # Always keep the full traceback in the server logs regardless of
+            # error type, so real bugs stay debuggable.
             logging.error(f"Job Failed: {e}")
+            logging.error(traceback.format_exc())
+
             job.status = 'error'
-            job.logs += f"\nCRITICAL ERROR: {str(e)}\n{traceback.format_exc()}"
+
+            from llm_engine import SummaryGenerationError
+            if isinstance(e, SummaryGenerationError):
+                # Expected, already-diagnosed failure (e.g. provider outage
+                # after exhausting retries) — the message is written to be
+                # read as-is, so skip the traceback noise in the job log.
+                job.logs += f"\nJob failed: {str(e)}"
+            else:
+                job.logs += f"\nCRITICAL ERROR: {str(e)}\n{traceback.format_exc()}"
+
             if 'session' in locals() and session:
                 session.status = "Error"
             db.session.commit()
