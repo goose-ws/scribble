@@ -17,14 +17,14 @@ def calculate_cost(prompt_tokens, completion_tokens, config):
     try:
         input_cost_str = str(config.get('llm_input_cost', '0')).strip()
         output_cost_str = str(config.get('llm_output_cost', '0')).strip()
-        
+
         def safe_float(val):
             try: return float(val)
             except ValueError: return 0.0
 
         input_cost_per_m = safe_float(input_cost_str)
         output_cost_per_m = safe_float(output_cost_str)
-        
+
         cost = (prompt_tokens * input_cost_per_m / 1_000_000) + \
                (completion_tokens * output_cost_per_m / 1_000_000)
         return round(cost, 6)
@@ -38,7 +38,7 @@ def clean_markdown(text):
     text = re.sub(r'^#{4,}\s*', '### ', text, flags=re.MULTILINE)
     text = re.sub(r'^\s*\*\*\*\s*$', DIVIDER, text, flags=re.MULTILINE)
     text = re.sub(r'\s*' + re.escape(DIVIDER) + r'\s*', f'\n\n{DIVIDER}\n\n', text)
-    
+
     return text.strip()
 
 def format_duration(seconds):
@@ -47,7 +47,7 @@ def format_duration(seconds):
 def log_llm_request(provider, model, usage, timing, req_data, res_data, status, finish_reason, config):
     req_str = json.dumps(req_data)
     res_str = json.dumps(res_data)
-    
+
     if config.get('db_space_saver'):
         if 'contents' in req_data:
             try:
@@ -59,7 +59,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
 
         try:
             items = res_data if isinstance(res_data, list) else [res_data]
-            
+
             data_modified = False
             for item in items:
                 if 'candidates' in item:
@@ -69,7 +69,7 @@ def log_llm_request(provider, model, usage, timing, req_data, res_data, status, 
                                 if 'thought' in part:
                                     part['thought'] = "[TRUNCATED]"
                                     data_modified = True
-            
+
             if data_modified:
                 res_str = json.dumps(res_data)
         except Exception:
@@ -160,9 +160,9 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     api_key = config.get('google_api_key')
     if not api_key:
         raise Exception("Google API Key is missing. Please configure it in Settings.")
-        
+
     model = config['active_llm_model']
-    
+
     with open(transcript_path, "rb") as f:
         encoded_file = base64.b64encode(f.read()).decode('utf-8')
 
@@ -180,50 +180,75 @@ def send_google(prompt, transcript_path, config, recap_context_path=None):
     }
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={api_key}"
-    
+
     start_time = time.time()
     response = requests.post(url, json=payload)
     duration = time.time() - start_time
-    
+
     try:
         res_json = response.json()
     except:
         res_json = {"error": response.text}
 
+    # Gemini's streamGenerateContent endpoint can fail *mid-stream*: it still
+    # responds with HTTP 200, but the JSON array's final element is an
+    # {"error": {...}} object instead of another candidate chunk. If we only
+    # look at res_json[-1] for usage/finishReason, that error chunk gets
+    # treated as "no usage data" while the partial text from earlier chunks
+    # still looks like a (truncated) success — so the failure goes unnoticed
+    # and unretried. Scan every chunk, remember the last *valid* one for
+    # usage/finish data, and treat any embedded error as a real failure.
+    error_info = None
+    last_valid_chunk = None
+    full_text = ""
+    returned_model = model
+
     try:
-        last_chunk = res_json[-1] if isinstance(res_json, list) else res_json
-        meta = last_chunk.get('usageMetadata', {})
-        
-        usage = {
-            'prompt': meta.get('promptTokenCount', 0),
-            'completion': meta.get('candidatesTokenCount', 0) + meta.get('thoughtsTokenCount', 0),
-            'total': meta.get('totalTokenCount', 0)
-        }
-        usage['cost'] = calculate_cost(usage['prompt'], usage['completion'], config)
-        
-        full_text = ""
-        if isinstance(res_json, list):
-            for chunk in res_json:
-                if 'candidates' in chunk:
-                    for part in chunk['candidates'][0]['content']['parts']:
-                        full_text += part.get('text', '')
-        
-        finish_reason = last_chunk.get('candidates', [{}])[0].get('finishReason', 'UNKNOWN')
-        
+        items = res_json if isinstance(res_json, list) else [res_json]
+        for chunk in items:
+            if not isinstance(chunk, dict):
+                continue
+            if 'error' in chunk:
+                error_info = chunk['error']
+                continue
+            if 'modelVersion' in chunk:
+                returned_model = chunk['modelVersion']
+            if 'candidates' in chunk:
+                last_valid_chunk = chunk
+                for part in chunk['candidates'][0]['content']['parts']:
+                    full_text += part.get('text', '')
     except Exception as e:
         logging.error(f"Error parsing Gemini response: {e}")
-        usage = {'prompt': 0, 'completion': 0, 'total': 0, 'cost': 0}
-        full_text = ""
+
+    meta = (last_valid_chunk or {}).get('usageMetadata', {})
+    usage = {
+        'prompt': meta.get('promptTokenCount', 0),
+        'completion': meta.get('candidatesTokenCount', 0) + meta.get('thoughtsTokenCount', 0),
+        'total': meta.get('totalTokenCount', 0)
+    }
+    usage['cost'] = calculate_cost(usage['prompt'], usage['completion'], config)
+
+    if error_info:
+        finish_reason = f"STREAM_ERROR:{error_info.get('status', 'ERROR')}"
+    elif last_valid_chunk:
+        finish_reason = last_valid_chunk.get('candidates', [{}])[0].get('finishReason', 'UNKNOWN')
+    else:
         finish_reason = "PARSE_ERROR"
 
-    log_llm_request('Google', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
-    
+    log_llm_request('Google', returned_model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+
+    if error_info:
+        err_code = error_info.get('code', response.status_code)
+        err_status = error_info.get('status', 'UNAVAILABLE')
+        err_message = error_info.get('message', 'Unknown streaming error')
+        raise Exception(f"Gemini API Error ({err_code} {err_status}): {err_message}")
+
     if response.status_code != 200 or not full_text:
         raise Exception(f"Gemini API Error: {response.text}")
-    
+
     stats = {
         'provider': 'Google',
-        'model': model,
+        'model': returned_model,
         'duration': duration,
         'tokens': usage
     }
@@ -233,23 +258,23 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
     api_key = config.get('anthropic_api_key')
     if not api_key:
         raise Exception("Anthropic API Key is missing. Please configure it in Settings.")
-        
+
     model = config['active_llm_model']
-    
+
     files_url = "https://api.anthropic.com/v1/files"
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "files-api-2025-04-14"
     }
-    
+
     with open(transcript_path, 'rb') as f:
         file_response = requests.post(files_url, headers=headers,
                                       files={"file": (os.path.basename(transcript_path), f, "text/plain")})
-    
+
     if file_response.status_code not in [200, 201]:
          raise Exception(f"Anthropic File Upload Failed: {file_response.text}")
-         
+
     file_id = file_response.json().get('id')
 
     recap_file_id = None
@@ -275,7 +300,7 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": content}]
     }
-    
+
     try:
         start_time = time.time()
         response = requests.post(msg_url, headers=headers, json=payload)
@@ -293,15 +318,16 @@ def send_anthropic(prompt, transcript_path, config, recap_context_path=None):
         content_list = res_json.get('content', [])
         full_text = "".join([c['text'] for c in content_list if c['type'] == 'text'])
         finish_reason = res_json.get('stop_reason', 'unknown')
+        returned_model = res_json.get('model', model)
 
-        log_llm_request('Anthropic', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+        log_llm_request('Anthropic', returned_model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
 
         if response.status_code != 200:
             raise Exception(f"Anthropic API Error: {response.text}")
 
         stats = {
             'provider': 'Anthropic',
-            'model': model,
+            'model': returned_model,
             'duration': duration,
             'tokens': usage
         }
@@ -381,15 +407,16 @@ def send_openai(prompt, transcript_path, config, recap_context_path=None):
 
     # Responses API uses top-level 'status', not choices[].finish_reason
     finish_reason = res_json.get('status', 'unknown')
+    returned_model = res_json.get('model', model)
 
-    log_llm_request('OpenAI', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+    log_llm_request('OpenAI', returned_model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
 
     if response.status_code != 200:
         raise Exception(f"OpenAI API Error: {response.text}")
 
     stats = {
         'provider': 'OpenAI',
-        'model': model,
+        'model': returned_model,
         'duration': duration,
         'tokens': usage
     }
@@ -398,13 +425,13 @@ def send_openai(prompt, transcript_path, config, recap_context_path=None):
 def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     base_url = config.get('ollama_url') or os.environ.get("OLLAMA_URL", "http://ollama:11434")
     model = config['active_llm_model']
-    
+
     if not base_url.startswith('http'):
         base_url = f"http://{base_url}"
     base_url = base_url.rstrip('/')
-    
+
     url = f"{base_url}/v1/chat/completions"
-    
+
     with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
         file_content = f.read()
 
@@ -415,7 +442,7 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
         recap_section = f"\n\n### previous_recaps.txt\n{recap_content}"
 
     combined_content = f"{prompt}\n\n### {os.path.basename(transcript_path)}\n{file_content}{recap_section}"
-    
+
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": combined_content}],
@@ -425,24 +452,25 @@ def send_ollama(prompt, transcript_path, config, recap_context_path=None):
     start_time = time.time()
     response = requests.post(url, json=payload)
     duration = time.time() - start_time
-    
+
     res_json = response.json()
-    
+
     usage_data = res_json.get('usage', {})
     usage = {
         'prompt': usage_data.get('prompt_tokens', 0),
         'completion': usage_data.get('completion_tokens', 0),
         'total': usage_data.get('total_tokens', 0)
     }
-    
+
     full_text = res_json.get('choices', [{}])[0].get('message', {}).get('content', '')
     finish_reason = res_json.get('choices', [{}])[0].get('finish_reason', 'unknown')
+    returned_model = res_json.get('model', model)
 
-    log_llm_request('Ollama', model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
-    
+    log_llm_request('Ollama', returned_model, usage, duration, payload, res_json, response.status_code, finish_reason, config)
+
     stats = {
         'provider': 'Ollama',
-        'model': model,
+        'model': returned_model,
         'duration': duration,
         'tokens': usage
     }
@@ -454,12 +482,12 @@ def send_discord_request(url, payload, session_id=None):
     try:
         response = requests.post(url, json=payload)
         duration = time.time() - start_time
-        
+
         try:
             res_json = response.json()
         except:
             res_json = {"body": response.text}
-            
+
         log = DiscordLog(
             session_id=session_id,
             message_id=str(res_json.get('id', '')),
@@ -472,7 +500,7 @@ def send_discord_request(url, payload, session_id=None):
         )
         db.session.add(log)
         db.session.commit()
-        
+
         return response
     except Exception as e:
         logging.error(f"Discord Request Failed: {e}")
@@ -485,16 +513,16 @@ def send_discord_request(url, payload, session_id=None):
 def send_discord(summary_text, webhook_url, title_date, session_id=None):
     if not webhook_url:
         return
-        
+
     title = f"{title_date} Session Recap"
-    
+
     start_payload = {
         "content": f"# {title}",
         "thread_name": title
     }
-    
+
     res = send_discord_request(f"{webhook_url}?wait=true", start_payload, session_id)
-    
+
     if res.status_code not in [200, 201, 204]:
         logging.error(f"Discord Thread Creation Failed: {res.text}")
         thread_webhook = webhook_url
@@ -506,10 +534,10 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
             thread_webhook = webhook_url
 
     paragraphs = summary_text.split('\n\n')
-    
+
     for p in paragraphs:
         if not p.strip(): continue
-        
+
         if len(p) > 1900:
             chunks = [p[i:i+1900] for i in range(0, len(p), 1900)]
             for chunk in chunks:
