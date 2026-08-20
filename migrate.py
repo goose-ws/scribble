@@ -294,6 +294,27 @@ def run_migration():
                     conn.execute(text("ALTER TABLE session ADD COLUMN session_consolidate_lines BOOLEAN NULL"))
                     conn.commit()
 
+                # --- Session: session_llm_provider / session_llm_model ---
+                # Per-session LLM override (highest precedence, above the
+                # campaign and global defaults) so a single stuck/erroring
+                # session can be re-run against a different model without
+                # affecting the campaign or any other session.
+                try:
+                    conn.execute(text("SELECT session_llm_provider FROM session LIMIT 1"))
+                    logger.info("Column 'session_llm_provider' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_llm_provider' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_llm_provider VARCHAR(50) NULL"))
+                    conn.commit()
+
+                try:
+                    conn.execute(text("SELECT session_llm_model FROM session LIMIT 1"))
+                    logger.info("Column 'session_llm_model' already exists in Session.")
+                except Exception:
+                    logger.info("Adding 'session_llm_model' column to Session...")
+                    conn.execute(text("ALTER TABLE session ADD COLUMN session_llm_model VARCHAR(100) NULL"))
+                    conn.commit()
+
                 # --- Campaign: New VAD Settings ---
                 try:
                     conn.execute(text("SELECT vad_min_silence_ms FROM campaign LIMIT 1"))

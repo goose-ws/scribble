@@ -628,8 +628,9 @@ def run_summary(job, config, post_to_discord_enabled=True):
             sessionDate=formatted_date
         )
 
-        effective_provider = session.campaign.llm_provider or config.get('llm_provider', 'Google')
-        effective_model = session.campaign.llm_model or config.get('llm_model', 'gemini-2.5-flash')
+        # Precedence: session override > campaign override > global config default.
+        effective_provider = session.effective_llm_provider(config)
+        effective_model = session.effective_llm_model(config)
 
         config['active_llm_provider'] = effective_provider
         config['active_llm_model'] = effective_model

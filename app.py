@@ -31,7 +31,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.3.9'
+APP_VERSION = '4.3.10'
 
 def apply_transcript_options(text, campaign, session=None):
     """
@@ -397,6 +397,13 @@ def settings():
     config = load_config()
     if request.method == 'POST':
         for key, value in request.form.items():
+            # webui_password is handled explicitly below (only rehashed when
+            # non-empty) — including it here would blindly overwrite the
+            # stored hash with an empty string on every settings save where
+            # the password field is left blank, silently "resetting" the
+            # password on next restart.
+            if key == 'webui_password':
+                continue
             if key in config:
                 if isinstance(config[key], bool):
                     config[key] = True if value == 'on' else False
@@ -1386,8 +1393,19 @@ def session_action(session_id, action_type):
              flash('Error: No transcript found.', 'danger')
              return redirect(url_for('session_detail', session_id=session_obj.id))
 
+        # Optional one-off (or sticky, until cleared) model override for this
+        # session — lets you swap models on a session that's stuck erroring
+        # without touching the campaign/global defaults used by every other
+        # session.
+        override_provider = (request.form.get('llm_provider') or '').strip()
+        override_model = (request.form.get('llm_model') or '').strip()
+        session_obj.session_llm_provider = override_provider or None
+        session_obj.session_llm_model = override_model or None
+
         new_job = Job(session_id=session_obj.id, step='summarize_only', status='pending')
         new_job.logs = "Queued for Summary Re-generation"
+        if override_provider or override_model:
+            new_job.logs += f"\nModel override for this session: {session_obj.session_llm_provider or '(inherited provider)'} / {session_obj.session_llm_model or '(inherited model)'}"
         db.session.add(new_job)
         session_obj.status = "Processing"
         db.session.commit()

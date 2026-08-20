@@ -65,6 +65,8 @@ class Session(db.Model):
     session_username_map = db.Column(db.Text, nullable=True)
     session_remove_timestamps = db.Column(db.Boolean, nullable=True)
     session_consolidate_lines = db.Column(db.Boolean, nullable=True)
+    session_llm_provider = db.Column(db.String(50), nullable=True)
+    session_llm_model = db.Column(db.String(100), nullable=True)
 
     jobs = db.relationship('Job', backref='session', lazy=True, cascade="all, delete-orphan")
     transcripts = db.relationship('Transcript', backref='session', lazy=True, cascade="all, delete-orphan")
@@ -84,6 +86,22 @@ class Session(db.Model):
         if self.session_consolidate_lines is not None:
             return self.session_consolidate_lines
         return self.campaign.transcript_consolidate_lines if self.campaign else False
+
+    def effective_llm_provider(self, global_config=None):
+        """Session override > Campaign override > global config default."""
+        if self.session_llm_provider:
+            return self.session_llm_provider
+        if self.campaign and self.campaign.llm_provider:
+            return self.campaign.llm_provider
+        return (global_config or {}).get('llm_provider', 'Google')
+
+    def effective_llm_model(self, global_config=None):
+        """Session override > Campaign override > global config default."""
+        if self.session_llm_model:
+            return self.session_llm_model
+        if self.campaign and self.campaign.llm_model:
+            return self.campaign.llm_model
+        return (global_config or {}).get('llm_model', 'gemini-flash-latest')
 
 
 class Transcript(db.Model):

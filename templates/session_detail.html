@@ -426,6 +426,28 @@
                         </button>
                     </form>
                     <form method="POST" action="/session/{{ recording_session.id }}/action/regenerate_summary">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">
+                                Model override for this session
+                                <small class="text-muted">(leave blank to inherit {{ recording_session.campaign.llm_provider or config.llm_provider }} / {{ recording_session.campaign.llm_model or config.llm_model }})</small>
+                            </label>
+                            <div class="row g-1">
+                                <div class="col-5">
+                                    <select name="llm_provider" class="form-select form-select-sm">
+                                        <option value="" {% if not recording_session.session_llm_provider %}selected{% endif %}>— Inherit —</option>
+                                        <option value="Google" {% if recording_session.session_llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
+                                        <option value="OpenAI" {% if recording_session.session_llm_provider == 'OpenAI' %}selected{% endif %}>OpenAI (ChatGPT)</option>
+                                        <option value="Anthropic" {% if recording_session.session_llm_provider == 'Anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+                                        <option value="Ollama" {% if recording_session.session_llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
+                                    </select>
+                                </div>
+                                <div class="col-7">
+                                    <input type="text" name="llm_model" class="form-control form-control-sm"
+                                           value="{{ recording_session.session_llm_model or '' }}"
+                                           placeholder="Inherit ({{ recording_session.campaign.llm_model or config.llm_model }})">
+                                </div>
+                            </div>
+                        </div>
                         <button type="submit" class="btn btn-outline-warning w-100"
                                 onclick="return confirm('Overwrite current recap?')">
                             <i class="bi bi-cpu"></i> Re-Request Recap
