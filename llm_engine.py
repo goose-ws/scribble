@@ -533,6 +533,59 @@ def send_discord_request(url, payload, session_id=None):
             def json(self): return {}
         return DummyResponse()
 
+def split_into_discord_chunks(text, limit=1900):
+    """
+    Split `text` into Discord-safe message chunks without ever cutting a word
+    in half.
+
+    Two bugs fed into #62:
+      1. Oversized paragraphs were hard-sliced with `p[i:i+1900]`, a blind
+         character-count cut with no regard for word boundaries.
+      2. Paragraphs were only ever detected via a literal '\\n\\n'. A manually
+         edited recap pasted back in (different line endings, or blank lines
+         collapsed to single newlines) could silently fail to split into
+         paragraphs at all, producing one giant blob that then hit bug #1.
+
+    This normalizes line endings, treats any run of blank lines as a
+    paragraph break (not just an exact '\\n\\n'), and — for any paragraph
+    still over the limit — packs it word-by-word so a break only ever lands
+    on whitespace. The only remaining case where a token can still get cut is
+    a single "word" longer than the whole limit (e.g. a giant URL with no
+    spaces), which has no valid boundary to break on regardless.
+    """
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+
+    chunks = []
+    for p in paragraphs:
+        if len(p) <= limit:
+            chunks.append(p)
+            continue
+
+        current = ""
+        for word in p.split(' '):
+            if len(word) > limit:
+                # A single unbreakable token longer than the limit — the only
+                # case with no valid word boundary, so fall back to a hard cut.
+                if current:
+                    chunks.append(current)
+                    current = ""
+                for i in range(0, len(word), limit):
+                    chunks.append(word[i:i + limit])
+                continue
+
+            candidate = f"{current} {word}".strip() if current else word
+            if len(candidate) > limit:
+                chunks.append(current)
+                current = word
+            else:
+                current = candidate
+
+        if current:
+            chunks.append(current)
+
+    return chunks
+
 def send_discord(summary_text, webhook_url, title_date, session_id=None):
     if not webhook_url:
         return
@@ -556,19 +609,9 @@ def send_discord(summary_text, webhook_url, title_date, session_id=None):
         except:
             thread_webhook = webhook_url
 
-    paragraphs = summary_text.split('\n\n')
-    
-    for p in paragraphs:
-        if not p.strip(): continue
-        
-        if len(p) > 1900:
-            chunks = [p[i:i+1900] for i in range(0, len(p), 1900)]
-            for chunk in chunks:
-                send_discord_request(thread_webhook, {"content": chunk}, session_id)
-                time.sleep(0.5)
-        else:
-            send_discord_request(thread_webhook, {"content": p}, session_id)
-            time.sleep(1)
+    for chunk in split_into_discord_chunks(summary_text, limit=1900):
+        send_discord_request(thread_webhook, {"content": chunk}, session_id)
+        time.sleep(0.75)
 
 # --- MAIN ENGINE ENTRY ---
 def run_summary(job, config, post_to_discord_enabled=True):
