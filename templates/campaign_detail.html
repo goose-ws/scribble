@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="page-header d-flex justify-content-between align-items-center mb-3 mb-lg-4">
     <div>
         <h1 class="display-6 mb-0 fw-bold">{{ campaign.name }}</h1>
         <div class="text-muted">Campaign Dashboard</div>
@@ -10,7 +10,7 @@
     </div>
 </div>
 
-<div class="row row-cols-1 row-cols-md-5 g-3 mb-4">
+<div class="row row-cols-2 row-cols-lg-3 row-cols-xl-5 g-3 mb-4">
     <div class="col">
         <div class="card shadow-sm border-primary h-100">
             <div class="card-body text-center">
@@ -33,7 +33,7 @@
                 <h2 class="text-info mb-0">{{ total_combined }}</h2>
                 <div class="text-muted small mb-2">Total LLM Tokens</div>
                 
-                <div class="small text-muted border-top pt-2 mt-2 d-flex justify-content-around">
+                <div class="small text-muted border-top pt-2 mt-2 d-flex flex-column flex-sm-row flex-wrap gap-1 justify-content-around">
                     <span title="Input (Context Sent)"><i class="bi bi-arrow-right-circle"></i> {{ total_in }} input tokens</span>
                     <span title="Output (Generated)"><i class="bi bi-arrow-left-circle"></i> {{ total_out }} output tokens</span>
                 </div>
@@ -80,7 +80,7 @@
                         <tr>
                             <th class="text-center">#</th>
                             <th>Date</th>
-                            <th>Filename</th>
+                            <th class="hide-mobile">Filename</th>
                             <th class="text-center">Status</th>
                             <th class="text-end">Action</th>
                         </tr>
@@ -90,7 +90,7 @@
                         <tr>
                             <td class="text-center fw-bold text-secondary">{{ session.session_number }}</td>
                             <td>{{ session.local_time_str }}</td>
-                            <td>
+                            <td class="hide-mobile">
                                 <div class="text-truncate small text-muted" style="max-width: 200px;" title="{{ session.original_filename }}">
                                     {{ session.original_filename }}
                                 </div>

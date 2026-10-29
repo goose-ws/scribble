@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Edit Campaign: {{ campaign.name }}</h2>
+<div class="page-header d-flex justify-content-between align-items-center mb-3 mb-lg-4">
+    <h2 class="mb-0">Edit Campaign: {{ campaign.name }}</h2>
     <a href="/campaigns" class="btn btn-secondary">Cancel</a>
 </div>
 
@@ -238,16 +238,16 @@
                             {% set parsed = campaign.username_map | from_json %}
                             {% for discord_name, display_name in parsed.items() %}
                             <div class="row g-2 mb-2 umap-row align-items-center">
-                                <div class="col-5">
+                                <div class="col-6 col-sm-5">
                                     <input type="text" name="umap_discord" class="form-control form-control-sm"
                                            placeholder="Discord username" value="{{ discord_name }}">
                                 </div>
-                                <div class="col-1 text-center text-muted">→</div>
-                                <div class="col-5">
+                                <div class="d-none d-sm-block col-sm-1 text-center text-muted">→</div>
+                                <div class="col-6 col-sm-5">
                                     <input type="text" name="umap_display" class="form-control form-control-sm"
                                            placeholder="Display name" value="{{ display_name }}">
                                 </div>
-                                <div class="col-1">
+                                <div class="col-12 col-sm-1 d-grid">
                                     <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)">
                                         <i class="bi bi-x"></i>
                                     </button>
@@ -337,7 +337,7 @@
                 </div>
             </div>
 
-            <div class="d-flex gap-2">
+            <div class="d-grid d-md-flex gap-2">
                 <button type="submit" class="btn btn-primary">Save Changes</button>
             </div>
         </form>
@@ -350,14 +350,14 @@
         const row = document.createElement('div');
         row.className = 'row g-2 mb-2 umap-row align-items-center';
         row.innerHTML = `
-            <div class="col-5">
+            <div class="col-6 col-sm-5">
                 <input type="text" name="umap_discord" class="form-control form-control-sm" placeholder="Discord username">
             </div>
-            <div class="col-1 text-center text-muted">→</div>
-            <div class="col-5">
+            <div class="d-none d-sm-block col-sm-1 text-center text-muted">→</div>
+            <div class="col-6 col-sm-5">
                 <input type="text" name="umap_display" class="form-control form-control-sm" placeholder="Display name">
             </div>
-            <div class="col-1">
+            <div class="col-12 col-sm-1 d-grid">
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeRow(this)">
                     <i class="bi bi-x">❌</i>
                 </button>

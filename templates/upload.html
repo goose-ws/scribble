@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container py-4">
+<div class="container-fluid px-0 py-lg-3">
     <div class="row justify-content-center">
-        <div class="col-md-8">
+        <div class="col-lg-8 col-xl-6">
             <div class="card shadow-sm">
                 <div class="card-header bg-primary text-white">
                     <h4 class="mb-0"><i class="bi bi-cloud-upload"></i> Upload Session</h4>
@@ -48,7 +48,7 @@
                         </div>
 
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
+                            <button type="submit" class="btn btn-primary btn-lg py-3" id="uploadBtn">
                                 <span id="btnText">Upload & Process</span>
                                 <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             </button>

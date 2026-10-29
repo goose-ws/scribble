@@ -39,28 +39,37 @@
     #live-indicator.active { color: #28a745; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
     .inherit-badge { font-size: 0.7rem; vertical-align: middle; }
+    @media (min-width: 768px) {
+        .border-end-md { border-right: 1px solid var(--bs-border-color); }
+    }
+    /* Tabs scroll sideways instead of wrapping awkwardly */
+    #sessionTabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: none; }
+    #sessionTabs::-webkit-scrollbar { display: none; }
+    #sessionTabs .nav-link { padding: .65rem .9rem; }
+    @media (max-width: 991.98px) {
+        .editable-textarea { min-height: 55vh; font-size: 16px; }
+        #jobAccordion pre { max-height: 240px !important; }
+    }
 </style>
 
-<div class="d-flex justify-content-between align-items-start mb-4">
-    <div>
+<div class="page-header d-flex justify-content-between align-items-start mb-3 mb-lg-4">
+    <div class="min-w-0">
         <div class="d-flex align-items-center gap-2">
             <h1 class="display-6 mb-0 fw-bold">Session {{ recording_session.session_number }}</h1>
         </div>
-        <div class="text-muted mt-1">
-            <i class="bi bi-calendar3"></i> {{ recording_session.local_time_str }}
-            <span class="mx-2">|</span>
-            <i class="bi bi-folder2"></i> {{ recording_session.campaign.name }}
-            <span class="mx-2">|</span>
-            <span class="font-monospace small opacity-75">{{ recording_session.original_filename }}</span>
-            <span id="session-status-badge" class="badge ms-2 bg-secondary rounded-pill align-text-top">{{ recording_session.status }}</span>
+        <div class="text-muted mt-1 d-flex flex-wrap align-items-center column-gap-3 row-gap-1">
+            <span><i class="bi bi-calendar3"></i> {{ recording_session.local_time_str }}</span>
+            <span><i class="bi bi-folder2"></i> {{ recording_session.campaign.name }}</span>
+            <span class="font-monospace small opacity-75 text-break">{{ recording_session.original_filename }}</span>
+            <span id="session-status-badge" class="badge bg-secondary rounded-pill">{{ recording_session.status }}</span>
         </div>
         <button class="btn btn-sm btn-link text-secondary text-decoration-none align-middle"
                 type="button" data-bs-toggle="collapse" data-bs-target="#editSessionDate" title="Edit Session Date">
             <i class="bi fs-5"><div class="text-muted mt-1"><span class="font-monospace small opacity-75">✏️ Edit Session Date</span></div></i>
         </button>
         <div class="collapse mt-2" id="editSessionDate">
-            <form action="{{ url_for('update_session_date', session_id=recording_session.id) }}" method="POST" class="d-flex gap-2 align-items-center">
-                <div class="input-group input-group-sm">
+            <form action="{{ url_for('update_session_date', session_id=recording_session.id) }}" method="POST" class="d-flex flex-wrap gap-2 align-items-center">
+                <div class="input-group" style="max-width: 320px;">
                     <span class="input-group-text"><i class="bi bi-calendar3"></i></span>
                     <input type="datetime-local" name="session_date" class="form-control"
                            value="{{ recording_session.session_date.strftime('%Y-%m-%dT%H:%M') if recording_session.local_time_str != 'Unknown Date' else '' }}">
@@ -125,7 +134,7 @@
     </div>
     <div class="card-body py-2">
         <div class="row align-items-center">
-            <div class="col-md-4 border-end">
+            <div class="col-md-4 border-end-md pb-3 pb-md-0">
                 <h6 class="text-primary mb-1">AI Generation</h6>
                 <ul class="list-unstyled small mb-0">
                     <li><strong>Provider:</strong> {{ llm_stats.get('provider', 'N/A') }}</li>
@@ -134,7 +143,7 @@
                     <li><strong>Tokens:</strong> {{ llm_stats.get('tokens') if llm_stats.get('tokens') else 'N/A' }}</li>
                 </ul>
             </div>
-            <div class="col-md-3 border-end">
+            <div class="col-md-3 border-end-md pb-3 pb-md-0">
                 <h6 class="text-success mb-1">Integrations</h6>
                 <div class="small">
                     <div class="d-flex justify-content-between mb-1">
@@ -148,7 +157,7 @@
                     {% if integrations.scripts %}
                         {% for script in integrations.scripts %}
                         <div class="d-flex justify-content-between mb-1">
-                            <span class="text-truncate" style="max-width:100px;" title="{{ script.name }}">{{ script.name }}:</span>
+                            <span class="text-truncate" style="max-width:160px;" title="{{ script.name }}">{{ script.name }}:</span>
                             {% if script.success %}<span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
                             {% else %}<span class="badge bg-danger" title="{{ script.detail }}">Fail</span>{% endif %}
                         </div>
@@ -248,7 +257,7 @@
                         <div class="card-body py-2">
 
                             {% set ts_inherited = recording_session.session_remove_timestamps is none %}
-                            <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-2">
                                 <div>
                                     <span class="fw-semibold small">Remove Timestamps</span>
                                     {% if ts_inherited %}
@@ -265,7 +274,7 @@
                             </div>
 
                             {% set cl_inherited = recording_session.session_consolidate_lines is none %}
-                            <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
                                 <div>
                                     <span class="fw-semibold small">Consolidate Lines</span>
                                     {% if cl_inherited %}
@@ -312,7 +321,7 @@
         <div class="tab-content" id="sessionTabsContent">
             <div class="tab-pane fade show active" id="master" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
-                    <div class="card-header bg-light d-flex justify-content-between py-1">
+                    <div class="card-header bg-light d-flex flex-wrap gap-1 justify-content-between align-items-center py-1">
                         <small class="text-muted">Master Transcript (Editable)</small>
                         <a href="/session/{{ recording_session.id }}/download/transcript" class="btn btn-sm btn-outline-secondary">Download <i class="bi bi-download"></i></a>
                     </div>
@@ -326,7 +335,7 @@
             </div>
             <div class="tab-pane fade" id="recap" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
-                    <div class="card-header bg-light d-flex justify-content-between py-1">
+                    <div class="card-header bg-light d-flex flex-wrap gap-1 justify-content-between align-items-center py-1">
                         <small class="text-muted">Recap (Markdown Editable)</small>
                         <a href="/session/{{ recording_session.id }}/download/recap" class="btn btn-sm btn-outline-secondary">Download <i class="bi bi-download"></i></a>
                     </div>
@@ -341,14 +350,14 @@
             <div class="tab-pane fade" id="users" role="tabpanel">
                 <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
                     <div class="card-body p-3">
-                        <div class="d-flex justify-content-between mb-3">
-                            <select id="user-select" class="form-select w-50" onchange="showUserTranscript()">
+                        <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-3">
+                            <select id="user-select" class="form-select flex-sm-grow-1" onchange="showUserTranscript()">
                                 <option value="">Select a User...</option>
                                 {% for username in user_transcripts.keys() %}
                                 <option value="{{ username }}">{{ username }}</option>
                                 {% endfor %}
                             </select>
-                            <div class="btn-group">
+                            <div class="btn-group flex-shrink-0">
                                 <button type="button" class="btn btn-outline-secondary" onclick="downloadCurrentUser()"><i class="bi bi-download"></i> Download</button>
                                 <button type="button" class="btn btn-outline-danger" onclick="retranscribeCurrentUser()"><i class="bi bi-mic"></i> Re-Transcribe User</button>
                             </div>
@@ -365,7 +374,7 @@
     </div>
 
     <!-- Right: Jobs + Actions -->
-    <div class="col-lg-5">
+    <div class="col-lg-5 mt-4 mt-lg-0">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="mb-0">Processing Steps</h5>
             <span id="live-indicator"><span class="dot"></span><span class="label">Idle</span></span>
@@ -432,7 +441,7 @@
                                 <small class="text-muted">(leave blank to inherit {{ recording_session.campaign.llm_provider or config.llm_provider }} / {{ recording_session.campaign.llm_model or config.llm_model }})</small>
                             </label>
                             <div class="row g-1">
-                                <div class="col-5">
+                                <div class="col-12 col-sm-5">
                                     <select name="llm_provider" class="form-select form-select-sm">
                                         <option value="" {% if not recording_session.session_llm_provider %}selected{% endif %}>— Inherit —</option>
                                         <option value="Google" {% if recording_session.session_llm_provider == 'Google' %}selected{% endif %}>Google (Gemini)</option>
@@ -441,7 +450,7 @@
                                         <option value="Ollama" {% if recording_session.session_llm_provider == 'Ollama' %}selected{% endif %}>Local (Ollama)</option>
                                     </select>
                                 </div>
-                                <div class="col-7">
+                                <div class="col-12 col-sm-7">
                                     <input type="text" name="llm_model" class="form-control form-control-sm"
                                            value="{{ recording_session.session_llm_model or '' }}"
                                            placeholder="Inherit ({{ recording_session.campaign.llm_model or config.llm_model }})">
@@ -509,16 +518,16 @@
         const row = document.createElement('div');
         row.className = 'row g-2 mb-2 umap-row align-items-center';
         row.innerHTML = `
-            <div class="col-5">
+            <div class="col-6 col-sm-5">
                 <input type="text" name="umap_discord" class="form-control form-control-sm"
                        placeholder="Discord username" value="${discord.replace(/"/g, '&quot;')}">
             </div>
-            <div class="col-1 text-center text-muted">→</div>
-            <div class="col-5">
+            <div class="d-none d-sm-block col-sm-1 text-center text-muted">→</div>
+            <div class="col-6 col-sm-5">
                 <input type="text" name="umap_display" class="form-control form-control-sm"
                        placeholder="Display name" value="${display.replace(/"/g, '&quot;')}">
             </div>
-            <div class="col-1">
+            <div class="col-12 col-sm-1 d-grid">
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSessionUmapRow(this)">
                     <i class="bi bi-x"></i>
                 </button>

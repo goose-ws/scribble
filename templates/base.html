@@ -2,20 +2,100 @@
 <html lang="en" data-bs-theme="{{ 'dark' if config.dark_mode else 'light' }}">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="{{ '#0f1117' if config.dark_mode else '#343a40' }}">
     <title>{{ container_name }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
-        /* ── Light mode ── */
-        body { background-color: #f3f4f6; }
-        .sidebar { min-height: 100vh; background-color: #343a40; color: white; }
-        .sidebar a { color: rgba(255,255,255,.75); text-decoration: none; display: block; padding: 10px 14px; border-radius: 6px; margin: 1px 6px; }
-        .sidebar a:hover { color: white; background-color: rgba(255,255,255,.08); }
-        .sidebar a.active { color: white; background-color: rgba(255,255,255,.12); }
-        .sidebar .logout { margin-top: 20px; border-top: 1px solid #4b545c; }
+        /* ── Layout ── */
+        :root { --sidebar-w: 250px; --topbar-h: 56px; --bottombar-h: 60px; }
+        html { -webkit-text-size-adjust: 100%; }
+        body { background-color: #f3f4f6; overflow-x: hidden; }
+        .app-shell { display: flex; min-height: 100vh; min-height: 100dvh; }
+        .app-main { flex: 1 1 auto; min-width: 0; padding: 1.5rem; }
+
+        /* Desktop sidebar */
+        .sidebar { width: var(--sidebar-w); flex: 0 0 var(--sidebar-w); background-color: #343a40; color: white;
+                   position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; }
+        .sidebar a, .offcanvas-nav a { color: rgba(255,255,255,.75); text-decoration: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; margin: 1px 0; }
+        .sidebar a:hover, .offcanvas-nav a:hover { color: white; background-color: rgba(255,255,255,.08); }
+        .sidebar a.active, .offcanvas-nav a.active { color: white; background-color: rgba(255,255,255,.12); }
+        .sidebar .brand { padding: 0; margin: 0; }
+        .sidebar .logout, .offcanvas-nav .logout { margin-top: 20px; border-top: 1px solid #4b545c; padding-top: 10px; }
+
+        /* Mobile top bar + offcanvas + bottom tabs */
+        .topbar { display: none; position: sticky; top: 0; z-index: 1030; height: calc(var(--topbar-h) + env(safe-area-inset-top));
+                  padding: env(safe-area-inset-top) 12px 0; background: #343a40; color: #fff; align-items: center; gap: 10px; }
+        .topbar .brand { display: flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; font-weight: 600; min-width: 0; }
+        .topbar .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .topbar .icon-btn { background: none; border: 0; color: #fff; font-size: 1.5rem; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; }
+        .topbar .icon-btn:active { background: rgba(255,255,255,.12); }
+        .offcanvas-nav { background: #343a40; color: #fff; }
+        .offcanvas-nav .btn-close { filter: invert(1); }
+
+        .bottom-nav { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1030;
+                      height: calc(var(--bottombar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+                      background: #fff; border-top: 1px solid rgba(0,0,0,.1); }
+        .bottom-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                        color: #6c757d; text-decoration: none; font-size: .7rem; -webkit-tap-highlight-color: transparent; }
+        .bottom-nav a i { font-size: 1.3rem; line-height: 1; }
+        .bottom-nav a.active { color: #0d6efd; font-weight: 600; }
+
+        @media (max-width: 991.98px) {
+            .sidebar { display: none; }
+            .topbar { display: flex; }
+            .bottom-nav { display: flex; }
+            .app-shell { display: block; }
+            .app-main { padding: 1rem; padding-bottom: calc(var(--bottombar-h) + env(safe-area-inset-bottom) + 1rem); }
+            h2 { font-size: 1.5rem; }
+            .display-6 { font-size: 1.5rem; }
+
+            /* Prevent iOS zoom-on-focus, bigger touch targets */
+            .form-control, .form-select { font-size: 16px; min-height: 44px; }
+            textarea.form-control { min-height: 0; }
+            .btn { min-height: 40px; }
+            .btn-sm { min-height: 34px; padding-left: .7rem; padding-right: .7rem; }
+            .form-check-input { width: 1.25em; height: 1.25em; }
+            .card-body { padding: .9rem; }
+
+            /* Cards stay readable, modals go near-fullscreen friendly */
+            .modal-dialog { margin: .75rem; }
+            .alert { font-size: .9rem; }
+
+            /* Stack page header rows (title + buttons) */
+            .page-header { flex-direction: column; align-items: stretch !important; gap: .75rem; }
+            .page-header > * { max-width: 100%; }
+            .page-header .btn, .page-header .btn-group { width: 100%; }
+            .page-header .btn-group .btn { flex: 1; }
+
+            /* Tables: let long cells wrap instead of forcing sideways scroll where possible */
+            .table-responsive { -webkit-overflow-scrolling: touch; }
+            .hide-mobile { display: none !important; }
+        }
+        @media (min-width: 992px) { .show-mobile-only { display: none !important; } }
+
+        /* Mobile stat tiles on dashboard / campaign pages */
+        @media (max-width: 767.98px) {
+            .stat-grid > [class*="col"] { border-right: 0 !important; }
+        }
+
+        /* Smooth, subtle polish */
+        .card { border-radius: .6rem; }
+        .btn { border-radius: .5rem; }
+        .badge { font-weight: 500; }
+        pre, code, .font-monospace { word-break: break-word; }
+        img { max-width: 100%; }
 
         /* ── Dark mode ── */
+        [data-bs-theme="dark"] .topbar { background-color: #171b24; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        [data-bs-theme="dark"] .offcanvas-nav { background-color: #171b24; }
+        [data-bs-theme="dark"] .offcanvas-nav a { color: #8b92a8; }
+        [data-bs-theme="dark"] .offcanvas-nav a:hover { color: #e8eaf0; background-color: rgba(255,255,255,0.04); }
+        [data-bs-theme="dark"] .offcanvas-nav a.active { color: #a99ff8; background-color: rgba(124,106,247,0.15); }
+        [data-bs-theme="dark"] .bottom-nav { background-color: #171b24; border-top-color: rgba(255,255,255,0.07); }
+        [data-bs-theme="dark"] .bottom-nav a { color: #8b92a8; }
+        [data-bs-theme="dark"] .bottom-nav a.active { color: #a99ff8; }
         [data-bs-theme="dark"] body { background-color: #0f1117; }
 
         [data-bs-theme="dark"] .sidebar {
@@ -115,44 +195,91 @@
     </style>
 </head>
 <body>
-    <div class="d-flex">
+    {% set nav_items = [
+        ('/', 'bi-speedometer2', 'Dashboard'),
+        ('/upload', 'bi-cloud-upload', 'Upload'),
+        ('/campaigns', 'bi-collection', 'Campaigns'),
+        ('/settings', 'bi-gear', 'Settings')
+    ] %}
+    {% set cur = request.path %}
+    <div class="app-shell">
         {% if session.get('logged_in') %}
-        <div class="sidebar p-3" style="width: 250px;">
-            <h3>
-                <a href="/" style="display:flex; align-items:center; gap:8px;">
-                    <img src="/scribble.png" alt="" style="width:50px; height:50px; object-fit:contain; flex-shrink:0;">
+        <!-- Mobile top bar -->
+        <header class="topbar">
+            <button class="icon-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileMenu" aria-label="Open menu">
+                <i class="bi bi-list"></i>
+            </button>
+            <a href="/" class="brand">
+                <img src="/scribble.png" alt="" style="width:32px; height:32px; object-fit:contain; flex-shrink:0;">
+                <span>{{ container_name }}</span>
+            </a>
+            {% if update_available %}
+                <a href="https://github.com/goose-ws/scribble" class="ms-auto badge bg-warning text-dark text-decoration-none"><i class="bi bi-arrow-up-circle"></i> Update</a>
+            {% endif %}
+        </header>
+
+        <!-- Mobile slide-out menu -->
+        <div class="offcanvas offcanvas-start offcanvas-nav" tabindex="-1" id="mobileMenu" style="width: 280px;">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title d-flex align-items-center gap-2">
+                    <img src="/scribble.png" alt="" style="width:36px; height:36px; object-fit:contain;">
                     {{ container_name }}
-                </a>
-            </h3>
-            <span style="color: #999; font-size: 0.8em; margin-right: 10px;"><a href="https://github.com/goose-ws/scribble">v{{ app_version }}</a></span>
-                {% if update_available %}
-                        <div class="sidebar-footer badge bg-warning text-dark text-decoration-none">
-                            <i class="bi bi-arrow-up-circle"></i> Update available
-                        </div>
-                {% endif %}
-            <hr>
-            <a href="/">Dashboard</a>
-            <a href="/upload">Upload</a>
-            <a href="/campaigns">Campaigns</a>
-            <a href="/settings">Settings</a>
-            <div class="logout">
-                <a href="/logout" class="text-danger">Logout</a>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
             </div>
-            <div class="mt-3 pt-2 border-top border-secondary">
-                <form method="POST" action="/settings/toggle_dark_mode">
-                    <button type="submit" class="btn btn-sm btn-outline-light w-100">
-                        {% if config.dark_mode %}
-                            <i class="bi bi-sun me-1"></i> Light Mode
-                        {% else %}
-                            <i class="bi bi-moon me-1"></i> Dark Mode
-                        {% endif %}
+            <div class="offcanvas-body d-flex flex-column">
+                <div class="mb-2" style="font-size:.8em;"><a href="https://github.com/goose-ws/scribble" style="display:inline; padding:0; color:#999;">v{{ app_version }}</a></div>
+                {% for href, icon, label in nav_items %}
+                    <a href="{{ href }}" class="{{ 'active' if (cur == href or (href != '/' and cur.startswith(href))) else '' }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
+                {% endfor %}
+                <div class="logout"><a href="/logout" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a></div>
+                <form method="POST" action="/settings/toggle_dark_mode" class="mt-auto pt-3">
+                    <button type="submit" class="btn btn-outline-light w-100">
+                        {% if config.dark_mode %}<i class="bi bi-sun me-1"></i> Light Mode{% else %}<i class="bi bi-moon me-1"></i> Dark Mode{% endif %}
                     </button>
                 </form>
             </div>
         </div>
+
+        <!-- Desktop sidebar -->
+        <aside class="sidebar p-3">
+            <h3 class="mb-1">
+                <a href="/" class="brand">
+                    <img src="/scribble.png" alt="" style="width:50px; height:50px; object-fit:contain; flex-shrink:0;">
+                    {{ container_name }}
+                </a>
+            </h3>
+            <span style="color: #999; font-size: 0.8em;"><a href="https://github.com/goose-ws/scribble" style="display:inline; padding:0; margin:0;">v{{ app_version }}</a></span>
+            {% if update_available %}
+                <div class="sidebar-footer badge bg-warning text-dark text-decoration-none ms-2">
+                    <i class="bi bi-arrow-up-circle"></i> Update available
+                </div>
+            {% endif %}
+            <hr>
+            {% for href, icon, label in nav_items %}
+                <a href="{{ href }}" class="{{ 'active' if (cur == href or (href != '/' and cur.startswith(href))) else '' }}"><i class="bi {{ icon }}"></i>{{ label }}</a>
+            {% endfor %}
+            <div class="logout">
+                <a href="/logout" class="text-danger"><i class="bi bi-box-arrow-right"></i>Logout</a>
+            </div>
+            <div class="mt-3 pt-2 border-top border-secondary">
+                <form method="POST" action="/settings/toggle_dark_mode">
+                    <button type="submit" class="btn btn-sm btn-outline-light w-100">
+                        {% if config.dark_mode %}<i class="bi bi-sun me-1"></i> Light Mode{% else %}<i class="bi bi-moon me-1"></i> Dark Mode{% endif %}
+                    </button>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Mobile bottom tab bar -->
+        <nav class="bottom-nav" aria-label="Primary">
+            {% for href, icon, label in nav_items %}
+                <a href="{{ href }}" class="{{ 'active' if (cur == href or (href != '/' and cur.startswith(href))) else '' }}"><i class="bi {{ icon }}"></i><span>{{ label }}</span></a>
+            {% endfor %}
+        </nav>
         {% endif %}
 
-        <div class="flex-grow-1 p-4">
+        <main class="app-main">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}
@@ -163,11 +290,11 @@
                     {% endfor %}
                 {% endif %}
             {% endwith %}
-            
+
             {% block content %}{% endblock %}
-        </div>
+        </main>
     </div>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
