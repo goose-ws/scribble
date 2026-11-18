@@ -2,9 +2,7 @@ Flask==3.1.3
 gunicorn==26.0.0
 SQLAlchemy==2.0.51
 faster-whisper==1.2.1
-# PyAV 19 removed the `metadata_errors` argument that faster-whisper 1.2.1 passes to av.open().
-# Keep at 18.x until faster-whisper releases a fix, or every audio file fails to decode.
-av==18.1.0
+av==17.1.0
 Werkzeug==3.1.8
 bcrypt==5.0.0
 requests==2.34.2
