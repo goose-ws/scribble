@@ -244,7 +244,8 @@ It is recommended to run Scribble behind a reverse proxy like Nginx for SSL secu
 * View and edit the Master Transcript.
 * View and edit individual User Transcripts.
 * Regenerate summaries or re-run specific pipeline steps.
-* Download Transcripts or Recaps as PDF or Text.
+* Download a single session's Transcript or Recap as text.
+* **Campaign Export**: From a campaign's page, export transcripts, recaps and (in ZIP) per-player transcripts for exactly the sessions you choose, as PDF, Markdown, Text or ZIP. Exports run in the background with a progress bar and stay available for an hour (`SCRIBBLE_EXPORT_TTL`, seconds). PDF is the slowest format; on multi-core hosts set `SCRIBBLE_EXPORT_WORKERS` to render sessions in parallel (defaults to cores - 1, max 4).
 * **Archive & Restore**: Keep source files to allow re-processing of old sessions with new models or prompts.
 
 ## Troubleshooting

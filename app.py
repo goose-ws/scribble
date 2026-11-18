@@ -19,8 +19,7 @@ from config import load_config, save_config
 from database import init_db, db
 from models import Campaign, Session, Job, Transcript, LLMLog, DiscordLog
 from worker import JobManager
-from io import BytesIO
-from xhtml2pdf import pisa
+import exports
 from urllib.parse import urlparse, urljoin
 from types import SimpleNamespace
 
@@ -31,7 +30,7 @@ app = Flask(__name__)
 app_config = load_config()
 app.secret_key = app_config.get('flask_secret_key', 'fallback_dev_key_if_config_fails')
 
-APP_VERSION = '4.3.12'
+APP_VERSION = '4.3.13'
 
 def apply_transcript_options(text, campaign, session=None):
     """
@@ -711,8 +710,21 @@ def campaign_detail(campaign_id):
                 except Exception:
                     pass
 
+    player_counts = dict(db.session.query(Transcript.session_id, func.count(Transcript.id))
+                         .filter(Transcript.session_id.in_(session_ids)).group_by(Transcript.session_id).all()) if session_ids else {}
+    export_sessions = [{
+        'id': s.id,
+        'number': s.session_number,
+        'date': s.local_time_str or 'Unknown Date',
+        'words': len(s.transcript_text.split()) if s.transcript_text else 0,
+        'has_transcript': bool(s.transcript_text),
+        'has_recap': bool(s.summary_text),
+        'players': player_counts.get(s.id, 0),
+    } for s in sorted(sessions, key=lambda x: (x.session_number or 0, x.session_date, x.id))]
+
     return render_template('campaign_detail.html',
                            campaign=campaign,
+                           export_sessions=export_sessions,
                            sessions=sessions,
                            total_words="{:,}".format(total_words),
                            total_in="{:,}".format(total_in),
@@ -725,125 +737,87 @@ def campaign_detail(campaign_id):
 @app.route('/campaigns/<int:campaign_id>/download_pdf/<doc_type>')
 @login_required
 def download_campaign_pdf(campaign_id, doc_type):
+    """Legacy one-click PDF of every session. Kept so old links keep working;
+    the campaign page now uses the background export flow below."""
+    if doc_type not in ('transcript', 'recap'):
+        return "Invalid document type", 400
     campaign = Campaign.query.get_or_404(campaign_id)
-    sessions = Session.query.filter_by(campaign_id=campaign.id).order_by(Session.session_number.asc()).all()
+    ids = [r.id for r in db.session.query(Session.id).filter_by(campaign_id=campaign.id)]
+    result = exports.run_sync(app, campaign.id, campaign.name, ids, [doc_type], 'pdf')
+    if result['status'] != 'done':
+        return f"Error generating PDF: {result['error'] or result['status']}", 500
+    job = exports.get_job(result['id'])
+    return send_file(job['path'], mimetype='application/pdf', as_attachment=True, download_name=job['filename'])
 
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            @page {{ size: A4; margin: 2cm; }}
-            body {{ font-family: Helvetica, sans-serif; font-size: 10pt; line-height: 1.4; }}
-            h1 {{ color: #2c3e50; text-align: center; font-size: 24pt; margin-bottom: 20px; }}
-            h2 {{ color: #2980b9; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 30px; page-break-after: avoid; }}
-            .meta {{ color: #95a5a6; font-size: 9pt; font-style: italic; margin-bottom: 10px; }}
-            .toc-entry {{ margin-bottom: 5px; font-size: 11pt; }}
-            .toc-entry a {{ text-decoration: none; color: #2c3e50; }}
-            .page-break {{ page-break-before: always; }}
-            .dialogue-line {{ margin-bottom: 8px; text-align: left; }}
-            .speaker {{ font-weight: bold; color: #444; }}
-            .recap-content {{ text-align: justify; }}
-        </style>
-    </head>
-    <body>
-    """
 
-    title_text = "Campaign Recap" if doc_type == 'recap' else "Campaign Transcripts"
-    html_content += f"""
-        <div style="text-align: center; margin-top: 200px;">
-            <h1>{campaign.name}</h1>
-            <h2>{title_text}</h2>
-            <p>Generated on {datetime.now().strftime('%Y-%m-%d')}</p>
-        </div>
-        <div class="page-break"></div>
-    """
+@app.route('/campaigns/<int:campaign_id>/export', methods=['POST'])
+@login_required
+def start_campaign_export(campaign_id):
+    """Start a background export. Body: {session_ids: [...], content: [...], format: 'pdf'|'md'|'txt'|'zip'}"""
+    campaign = Campaign.query.get_or_404(campaign_id)
+    data = request.get_json(silent=True) or {}
 
-    html_content += "<h1>Table of Contents</h1>"
-    for s in sessions:
-        if doc_type == 'recap' and not s.summary_text: continue
-        if doc_type == 'transcript' and not s.transcript_text: continue
+    fmt = data.get('format', 'pdf')
+    if fmt not in exports.FORMATS:
+        return jsonify({'error': 'Unknown format.'}), 400
 
-        entry_title = f"Session {s.session_number}: {s.session_date.strftime('%Y-%m-%d')}"
-        html_content += f"""
-        <div class='toc-entry'>
-            <a href='#session_{s.id}'>{entry_title}</a>
-        </div>
-        """
+    content = [c for c in exports.CONTENT_TYPES if c in (data.get('content') or [])]
+    if fmt != 'zip':
+        content = [c for c in content if c != 'players']   # per-player files only make sense in a ZIP
+    if not content:
+        return jsonify({'error': 'Choose at least one thing to export.'}), 400
 
-    html_content += "<div class='page-break'></div>"
+    valid = {r.id for r in db.session.query(Session.id).filter_by(campaign_id=campaign.id)}
+    requested = []
+    for i in (data.get('session_ids') or []):
+        try:
+            requested.append(int(i))
+        except (TypeError, ValueError):
+            continue
+    ids = [i for i in dict.fromkeys(requested) if i in valid]
+    if not ids:
+        return jsonify({'error': 'Select at least one session.'}), 400
 
-    for s in sessions:
-        date_str = s.session_date.strftime('%B %d, %Y')
-        anchor = f'<a name="session_{s.id}"></a>'
+    export_id = exports.start_export(app, campaign.id, campaign.name, ids, content, fmt)
+    return jsonify({'export_id': export_id})
 
-        if doc_type == 'recap':
-            if not s.summary_text: continue
 
-            lines = s.summary_text.split('\n')
-            header_ended = False
-            content_lines = []
-            for line in lines:
-                if '##' in line and not header_ended: header_ended = True
-                if header_ended: content_lines.append(line)
-                elif not any(c in line for c in ['🤖', '📋', '⌚', '🧾']):
-                     content_lines.append(line)
+def _export_json(snap):
+    snap = dict(snap)
+    if snap['status'] == 'done':
+        snap['download_url'] = url_for('download_export', export_id=snap['id'])
+    return snap
 
-            md_text = "\n".join(content_lines)
-            body_html = markdown.markdown(md_text)
 
-            html_content += f"""
-                {anchor}
-                <h2>Session {s.session_number}</h2>
-                <div class="meta">{date_str}</div>
-                <div class="recap-content">{body_html}</div>
-                <div class="page-break"></div>
-            """
+@app.route('/exports/<export_id>/status')
+@login_required
+def export_status(export_id):
+    job = exports.get_job(export_id)
+    if not job:
+        return jsonify({'status': 'expired', 'error': 'This export has expired. Please run it again.'}), 404
+    return jsonify(_export_json(exports.snapshot(job)))
 
-        elif doc_type == 'transcript':
-            if not s.transcript_text: continue
 
-            html_content += f"""
-                {anchor}
-                <h2>Session {s.session_number}</h2>
-                <div class="meta">{date_str}</div>
-                <div class="transcript-content">
-            """
+@app.route('/exports/<export_id>/download')
+@login_required
+def download_export(export_id):
+    job = exports.get_job(export_id)
+    if not job or job['status'] != 'done' or not job['path'] or not os.path.exists(job['path']):
+        return "This export has expired. Please run it again.", 404
+    return send_file(job['path'], as_attachment=True, download_name=job['filename'])
 
-            raw_lines = s.transcript_text.split('\n')
 
-            for line in raw_lines:
-                line = line.strip()
-                if not line: continue
+@app.route('/exports/<export_id>/cancel', methods=['POST'])
+@login_required
+def cancel_export(export_id):
+    return jsonify({'cancelled': exports.cancel(export_id)})
 
-                safe_line = line.replace('<', '&lt;').replace('>', '&gt;')
-                bracket_idx = safe_line.find(']')
-                sep_idx = safe_line.find(':', bracket_idx) if bracket_idx != -1 else -1
 
-                if bracket_idx != -1 and sep_idx != -1:
-                    formatted_line = f"<span class='speaker'>{safe_line[:sep_idx+1]}</span>{safe_line[sep_idx+1:]}"
-                else:
-                    formatted_line = safe_line
-
-                html_content += f"<div class='dialogue-line'>{formatted_line}</div>"
-
-            html_content += "</div><div class='page-break'></div>"
-
-    html_content += "</body></html>"
-
-    pdf_output = BytesIO()
-    pisa_status = pisa.CreatePDF(html_content, dest=pdf_output)
-
-    if pisa_status.err:
-        return f"Error generating PDF: {pisa_status.err}", 500
-
-    pdf_output.seek(0)
-    filename = f"{campaign.name.replace(' ', '_')}_{doc_type}.pdf"
-
-    return Response(
-        pdf_output,
-        mimetype='application/pdf',
-        headers={"Content-disposition": f"attachment; filename={filename}"}
-    )
+@app.route('/campaigns/<int:campaign_id>/exports')
+@login_required
+def campaign_exports(campaign_id):
+    Campaign.query.get_or_404(campaign_id)
+    return jsonify([_export_json(s) for s in exports.jobs_for_campaign(campaign_id)])
 
 def renumber_campaign_sessions(campaign_id):
     """Recompute session_number for every session in a campaign.

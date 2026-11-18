@@ -120,22 +120,429 @@
     <div class="col-lg-4">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-dark text-white py-3">
-                <h6 class="mb-0"><i class="bi bi-file-earmark-pdf"></i> Downloads</h6>
+                <h6 class="mb-0"><i class="bi bi-box-arrow-down"></i> Export</h6>
             </div>
             <div class="card-body">
-                <p class="small text-muted">Compile all data for this campaign into a single PDF document.</p>
-                
+                <p class="small text-muted">Download transcripts and recaps for the whole campaign, or pick exactly which sessions and formats you want.</p>
                 <div class="d-grid gap-2">
-                    <a href="{{ url_for('download_campaign_pdf', campaign_id=campaign.id, doc_type='transcript') }}" class="btn btn-outline-primary">
-                        <i class="bi bi-file-text"></i> Download Full Transcript
-                    </a>
-                    
-                    <a href="{{ url_for('download_campaign_pdf', campaign_id=campaign.id, doc_type='recap') }}" class="btn btn-outline-success">
-                        <i class="bi bi-journal-text"></i> Download Campaign Story (Recaps)
-                    </a>
+                    <button type="button" class="btn btn-primary" id="exportOpenBtn">
+                        <i class="bi bi-sliders"></i> Custom export&hellip;
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" data-quick="transcript">
+                        <i class="bi bi-file-text"></i> Full Transcript (PDF)
+                    </button>
+                    <button type="button" class="btn btn-outline-success" data-quick="recap">
+                        <i class="bi bi-journal-text"></i> Campaign Story (PDF)
+                    </button>
+                </div>
+                <div id="recentExports" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exportModalTitle"><i class="bi bi-box-arrow-down"></i> Export {{ campaign.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <!-- Step 1: options -->
+            <div id="exportOptions">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="fw-semibold mb-1">What to include</div>
+                        <div class="d-flex flex-wrap column-gap-4 row-gap-1">
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="expTranscript" checked><label class="form-check-label" for="expTranscript">Transcript</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="expRecap"><label class="form-check-label" for="expRecap">Recap</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="expPlayers"><label class="form-check-label" for="expPlayers">Per-player transcripts <span class="text-muted small">(ZIP only)</span></label></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="fw-semibold mb-1">Format</div>
+                        <div class="btn-group w-100" role="group" aria-label="Format">
+                            <input type="radio" class="btn-check" name="expFormat" id="fmtPdf" value="pdf" autocomplete="off" checked><label class="btn btn-outline-primary" for="fmtPdf">PDF</label>
+                            <input type="radio" class="btn-check" name="expFormat" id="fmtMd" value="md" autocomplete="off"><label class="btn btn-outline-primary" for="fmtMd">Markdown</label>
+                            <input type="radio" class="btn-check" name="expFormat" id="fmtTxt" value="txt" autocomplete="off"><label class="btn btn-outline-primary" for="fmtTxt">Text</label>
+                            <input type="radio" class="btn-check" name="expFormat" id="fmtZip" value="zip" autocomplete="off"><label class="btn btn-outline-primary" for="fmtZip">ZIP</label>
+                        </div>
+                        <div class="form-text" id="expFormatHint"></div>
+                    </div>
+
+                    <div>
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                            <div class="fw-semibold">Sessions <span class="text-muted fw-normal small" id="expSummary"></span></div>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" id="expAll">All</button>
+                                <button type="button" class="btn btn-outline-secondary" id="expLast5">Last 5</button>
+                                <button type="button" class="btn btn-outline-secondary" id="expNone">None</button>
+                            </div>
+                        </div>
+                        <div class="row g-2 align-items-end mb-2">
+                            <div class="col-5 col-sm-4">
+                                <label class="form-label small text-muted mb-0" for="expFrom">From</label>
+                                <input type="date" class="form-control form-control-sm" id="expFrom">
+                            </div>
+                            <div class="col-5 col-sm-4">
+                                <label class="form-label small text-muted mb-0" for="expTo">To</label>
+                                <input type="date" class="form-control form-control-sm" id="expTo">
+                            </div>
+                            <div class="col-2 col-sm-4">
+                                <button type="button" class="btn btn-sm btn-outline-secondary w-100" id="expClearDates" title="Clear dates" aria-label="Clear dates"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+                        <div class="form-text mb-2">Pick dates to select sessions in that range (inclusive; undated sessions are skipped). <span class="d-none d-md-inline">Or hold Shift and click to select a range by hand.</span></div>
+                        <div class="list-group" id="expSessionList" style="max-height: 38vh; overflow-y: auto;"></div>
+                    </div>
+                    <div class="alert alert-danger py-2 mt-3 d-none" id="expError"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="expStart"><i class="bi bi-play-fill"></i> Start export</button>
+                </div>
+            </div>
+
+            <!-- Step 2: progress -->
+            <div id="exportProgress" class="d-none">
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                        <div class="fw-semibold" id="expPhase">Starting&hellip;</div>
+                        <div class="small text-muted" id="expCount"></div>
+                    </div>
+                    <div class="progress" style="height: 1.25rem;" role="progressbar" aria-label="Export progress" id="expBarWrap" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="expBar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="small text-muted mt-2" id="expMeta"></div>
+                    <div class="alert alert-success mt-3 d-none" id="expDone"></div>
+                    <div class="alert alert-danger mt-3 d-none" id="expFail"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary me-auto" id="expBack"><i class="bi bi-arrow-left"></i> New export</button>
+                    <button type="button" class="btn btn-outline-danger" id="expCancel">Cancel export</button>
+                    <a class="btn btn-success d-none" id="expDownload" href="#"><i class="bi bi-download"></i> Download</a>
+                    <button type="button" class="btn btn-secondary d-none" id="expClose" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<style>
+    .export-row { cursor: pointer; }
+    .export-row.dim { opacity: .45; cursor: not-allowed; }
+    .export-chip { font-size: .7rem; }
+    #recentExports .recent-item { border-top: 1px solid var(--bs-border-color); padding: .5rem 0; font-size: .85rem; }
+    #recentExports .recent-item:first-child { border-top: 0; }
+</style>
+
+<script>
+(function () {
+    const CAMPAIGN_ID = {{ campaign.id }};
+    const SESSIONS = {{ export_sessions|tojson }};
+    const PREF_KEY = 'scribbleExportPrefs';
+    const $ = id => document.getElementById(id);
+    const FORMAT_HINTS = {
+        pdf: 'One document with a cover page, table of contents and bookmarks. Slowest for big campaigns.',
+        md:  'One Markdown file. Very fast.',
+        txt: 'One plain-text file. Very fast.',
+        zip: 'A folder per session with separate files (transcript.txt, recap.md, players/). Very fast; the only option that includes per-player transcripts.'
+    };
+    const FORMAT_LABEL = { pdf: 'PDF', md: 'Markdown', txt: 'Text', zip: 'ZIP' };
+
+    const selected = new Set();
+    let lastClicked = null, pollTimer = null, current = null, autoDownloaded = new Set(), startedAt = 0;
+    let modal = null;
+    const getModal = () => modal || (modal = bootstrap.Modal.getOrCreateInstance($('exportModal')));
+
+    // ── preferences ──
+    function loadPrefs() {
+        try {
+            const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+            if (p.content) { $('expTranscript').checked = p.content.includes('transcript'); $('expRecap').checked = p.content.includes('recap'); $('expPlayers').checked = p.content.includes('players'); }
+            if (p.format) { const r = document.querySelector(`input[name=expFormat][value=${p.format}]`); if (r) r.checked = true; }
+        } catch (e) {}
+    }
+    function savePrefs() {
+        try { localStorage.setItem(PREF_KEY, JSON.stringify({ content: contentChoice(), format: formatChoice() })); } catch (e) {}
+    }
+    const formatChoice = () => document.querySelector('input[name=expFormat]:checked').value;
+    function contentChoice() {
+        const c = [];
+        if ($('expTranscript').checked) c.push('transcript');
+        if ($('expRecap').checked) c.push('recap');
+        if ($('expPlayers').checked && formatChoice() === 'zip') c.push('players');
+        return c;
+    }
+
+    // ── session list ──
+    function hasSelectedContent(s, content) {
+        return (content.includes('transcript') && s.has_transcript) ||
+               (content.includes('recap') && s.has_recap) ||
+               (content.includes('players') && s.players > 0);
+    }
+    function chip(text, on) {
+        const b = document.createElement('span');
+        b.className = 'badge export-chip ' + (on ? 'text-bg-primary' : 'bg-body-secondary text-body-secondary border');
+        b.textContent = text;
+        return b;
+    }
+    function renderList() {
+        const content = contentChoice();
+        const list = $('expSessionList');
+        list.textContent = '';
+        SESSIONS.forEach(s => {
+            const ok = hasSelectedContent(s, content);
+            if (!ok) selected.delete(s.id);
+            const row = document.createElement('label');
+            row.className = 'list-group-item d-flex align-items-center gap-2 export-row' + (ok ? '' : ' dim');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.className = 'form-check-input m-0 flex-shrink-0';
+            cb.disabled = !ok; cb.checked = selected.has(s.id); cb.dataset.id = s.id;
+            cb.addEventListener('click', e => onRowClick(e, s.id));
+            const mid = document.createElement('div');
+            mid.className = 'flex-grow-1 min-w-0';
+            const t = document.createElement('div');
+            t.className = 'fw-semibold text-truncate';
+            t.textContent = (s.number ? 'Session ' + s.number : 'Undated session');
+            const d = document.createElement('div');
+            d.className = 'text-muted small text-truncate';
+            const day = /^\d{4}-\d{2}-\d{2}/.test(s.date) ? s.date.slice(0, 10) : s.date;
+            d.textContent = day + (s.words ? ' · ' + s.words.toLocaleString() + ' words' : '');
+            mid.append(t, d);
+            const chips = document.createElement('div');
+            chips.className = 'd-flex gap-1 flex-shrink-0';
+            if (s.has_transcript) chips.appendChild(chip('T', content.includes('transcript')));
+            if (s.has_recap) chips.appendChild(chip('R', content.includes('recap')));
+            if (s.players) chips.appendChild(chip('P' + s.players, content.includes('players')));
+            row.append(cb, mid, chips);
+            list.appendChild(row);
+        });
+        if (!SESSIONS.length) list.innerHTML = '<div class="list-group-item text-muted">No sessions yet.</div>';
+        updateSummary();
+    }
+    function onRowClick(e, id) {
+        const rows = SESSIONS.map(s => s.id);
+        if (e.shiftKey && lastClicked !== null && lastClicked !== id) {
+            const a = rows.indexOf(lastClicked), b = rows.indexOf(id);
+            const [lo, hi] = a < b ? [a, b] : [b, a];
+            const content = contentChoice();
+            for (let i = lo; i <= hi; i++) {
+                if (!hasSelectedContent(SESSIONS[i], content)) continue;
+                e.target.checked ? selected.add(rows[i]) : selected.delete(rows[i]);
+            }
+            renderList();
+        } else {
+            e.target.checked ? selected.add(id) : selected.delete(id);
+            updateSummary();
+        }
+        lastClicked = id;
+    }
+    function updateSummary() {
+        const content = contentChoice();
+        let words = 0;
+        SESSIONS.forEach(s => { if (selected.has(s.id) && content.includes('transcript')) words += s.words; });
+        $('expSummary').textContent = '— ' + selected.size + ' of ' + SESSIONS.length + ' selected' +
+            (words ? ' · ' + words.toLocaleString() + ' words' : '');
+        $('expStart').disabled = !selected.size || !content.length;
+    }
+    function selectWhere(pred) {
+        selected.clear();
+        const content = contentChoice();
+        SESSIONS.forEach((s, i) => { if (hasSelectedContent(s, content) && pred(s, i)) selected.add(s.id); });
+        renderList();
+    }
+    function sessionDay(s) {
+        return /^\d{4}-\d{2}-\d{2}/.test(s.date) ? s.date.slice(0, 10) : null;   // ISO dates compare as strings
+    }
+    function applyDateRange() {
+        const from = $('expFrom').value, to = $('expTo').value;
+        if (!from && !to) return;
+        selectWhere(s => {
+            const day = sessionDay(s);
+            return day && (!from || day >= from) && (!to || day <= to);
+        });
+    }
+    function onOptionsChanged() {
+        $('expPlayers').disabled = formatChoice() !== 'zip';
+        if (formatChoice() !== 'zip') $('expPlayers').checked = false;
+        $('expFormatHint').textContent = FORMAT_HINTS[formatChoice()];
+        savePrefs();
+        renderList();
+        applyDateRange();   // keep an active date range in sync with the chosen content
+    }
+
+    // ── starting an export ──
+    function showError(msg) { const e = $('expError'); e.textContent = msg; e.classList.toggle('d-none', !msg); }
+    async function begin(payload) {
+        const res = await fetch(`/campaigns/${CAMPAIGN_ID}/export`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Could not start the export.');
+        attach(data.export_id);
+    }
+    async function startCustom() {
+        showError('');
+        savePrefs();
+        $('expStart').disabled = true;
+        try {
+            await begin({ session_ids: Array.from(selected), content: contentChoice(), format: formatChoice() });
+        } catch (e) { showError(e.message); updateSummary(); }
+    }
+    async function quick(kind) {
+        const ids = SESSIONS.filter(s => kind === 'recap' ? s.has_recap : s.has_transcript).map(s => s.id);
+        if (!ids.length) { openOptions(); showError('No sessions have a ' + kind + ' yet.'); return; }
+        getModal().show();
+        try { await begin({ session_ids: ids, content: [kind], format: 'pdf' }); }
+        catch (e) { openOptions(); showError(e.message); }
+    }
+
+    // ── progress view ──
+    function showStep(step) {
+        $('exportOptions').classList.toggle('d-none', step !== 'options');
+        $('exportProgress').classList.toggle('d-none', step !== 'progress');
+    }
+    function openOptions() {
+        showStep('options'); showError('');
+        renderList();
+        getModal().show();
+    }
+    function attach(exportId) {
+        current = exportId; startedAt = Date.now();
+        $('expDone').classList.add('d-none'); $('expFail').classList.add('d-none');
+        $('expDownload').classList.add('d-none'); $('expClose').classList.add('d-none');
+        $('expCancel').classList.remove('d-none');
+        setBar(0, true);
+        $('expPhase').textContent = 'Starting…'; $('expCount').textContent = ''; $('expMeta').textContent = '';
+        showStep('progress');
+        getModal().show();
+        poll();
+    }
+    function setBar(pct, active) {
+        const b = $('expBar');
+        b.style.width = pct + '%'; b.textContent = pct + '%';
+        b.classList.toggle('progress-bar-animated', !!active);
+        b.classList.toggle('progress-bar-striped', !!active);
+        $('expBarWrap').setAttribute('aria-valuenow', pct);
+    }
+    function fmtSize(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+    function describe(j) {
+        return FORMAT_LABEL[j.format] + ' · ' + j.content.join(' + ') + ' · ' + j.sessions + ' session' + (j.sessions === 1 ? '' : 's');
+    }
+    async function poll() {
+        clearTimeout(pollTimer);
+        if (!current) return;
+        let j;
+        try {
+            const r = await fetch(`/exports/${current}/status`);
+            j = await r.json();
+            if (r.status === 404) j.status = 'expired';
+        } catch (e) { pollTimer = setTimeout(poll, 2000); return; }
+
+        const elapsed = Math.round((Date.now() - startedAt) / 1000);
+        $('expPhase').textContent = j.phase || '';
+        $('expCount').textContent = j.total ? Math.min(j.done, j.total) + ' / ' + j.total : '';
+        setBar(j.percent || 0, j.status === 'running' || j.status === 'queued');
+        $('expMeta').textContent = j.status === 'queued' ? 'Waiting for another export to finish…' : (j.status === 'running' ? 'Elapsed ' + elapsed + 's — you can close this window; the export keeps running.' : '');
+
+        if (j.status === 'done') {
+            $('expCancel').classList.add('d-none');
+            $('expClose').classList.remove('d-none');
+            const d = $('expDone');
+            d.textContent = 'Ready: ' + j.filename + ' (' + fmtSize(j.size) + ')';
+            d.classList.remove('d-none');
+            const a = $('expDownload'); a.href = j.download_url; a.classList.remove('d-none');
+            if (!autoDownloaded.has(j.id)) { autoDownloaded.add(j.id); window.location.href = j.download_url; }
+            loadRecent();
+        } else if (['error', 'cancelled', 'expired'].includes(j.status)) {
+            $('expCancel').classList.add('d-none');
+            $('expClose').classList.remove('d-none');
+            setBar(j.percent || 0, false);
+            const f = $('expFail');
+            f.textContent = j.status === 'cancelled' ? 'Export cancelled.' : (j.error || 'Export failed.');
+            f.classList.remove('d-none');
+            loadRecent();
+        } else {
+            pollTimer = setTimeout(poll, 700);
+        }
+    }
+    async function cancelExport() {
+        if (!current) return;
+        $('expCancel').disabled = true;
+        try { await fetch(`/exports/${current}/cancel`, { method: 'POST' }); } catch (e) {}
+        $('expCancel').disabled = false;
+    }
+
+    // ── recent exports (survive navigating away) ──
+    let recentTimer = null;
+    async function loadRecent() {
+        clearTimeout(recentTimer);
+        let items = [];
+        try { items = await (await fetch(`/campaigns/${CAMPAIGN_ID}/exports`)).json(); } catch (e) { return; }
+        const box = $('recentExports');
+        box.textContent = '';
+        if (items.length) {
+            const h = document.createElement('div');
+            h.className = 'small fw-semibold text-muted mb-1'; h.textContent = 'Recent exports';
+            box.appendChild(h);
+        }
+        items.forEach(j => {
+            const row = document.createElement('div');
+            row.className = 'recent-item d-flex justify-content-between align-items-center gap-2';
+            const left = document.createElement('div');
+            left.className = 'min-w-0';
+            left.textContent = describe(j);
+            const right = document.createElement('div');
+            right.className = 'flex-shrink-0';
+            if (j.status === 'done') {
+                const a = document.createElement('a');
+                a.href = j.download_url; a.className = 'btn btn-sm btn-outline-success';
+                a.innerHTML = '<i class="bi bi-download"></i> ' + fmtSize(j.size);
+                right.appendChild(a);
+            } else if (j.status === 'queued' || j.status === 'running') {
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'btn btn-sm btn-outline-primary';
+                b.textContent = j.percent + '% · view';
+                b.addEventListener('click', () => attach(j.id));
+                right.appendChild(b);
+            } else {
+                const sp = document.createElement('span');
+                sp.className = 'badge text-bg-' + (j.status === 'cancelled' ? 'secondary' : 'danger');
+                sp.textContent = j.status === 'cancelled' ? 'Cancelled' : 'Failed';
+                if (j.error) sp.title = j.error;
+                right.appendChild(sp);
+            }
+            row.append(left, right);
+            box.appendChild(row);
+        });
+        if (items.some(j => j.status === 'queued' || j.status === 'running')) recentTimer = setTimeout(loadRecent, 2500);
+    }
+
+    // ── wiring ──
+    $('exportOpenBtn').addEventListener('click', openOptions);
+    document.querySelectorAll('[data-quick]').forEach(b => b.addEventListener('click', () => quick(b.dataset.quick)));
+    ['expTranscript', 'expRecap', 'expPlayers'].forEach(id => $(id).addEventListener('change', onOptionsChanged));
+    document.querySelectorAll('input[name=expFormat]').forEach(r => r.addEventListener('change', onOptionsChanged));
+    $('expAll').addEventListener('click', () => selectWhere(() => true));
+    $('expNone').addEventListener('click', () => selectWhere(() => false));
+    $('expLast5').addEventListener('click', () => selectWhere((s, i) => i >= SESSIONS.length - 5));
+    ['expFrom', 'expTo'].forEach(id => $(id).addEventListener('change', applyDateRange));
+    $('expClearDates').addEventListener('click', () => { $('expFrom').value = ''; $('expTo').value = ''; selectWhere(() => true); });
+    // Any other way of choosing sessions makes the date fields stale, so clear them.
+    ['expAll', 'expNone', 'expLast5'].forEach(id => $(id).addEventListener('click', () => { $('expFrom').value = ''; $('expTo').value = ''; }));
+    $('expStart').addEventListener('click', startCustom);
+    $('expCancel').addEventListener('click', cancelExport);
+    $('expBack').addEventListener('click', () => { showStep('options'); showError(''); renderList(); });
+    $('exportModal').addEventListener('hidden.bs.modal', () => { clearTimeout(pollTimer); loadRecent(); });
+
+    loadPrefs();
+    onOptionsChanged();
+    selectWhere(() => true);
+    loadRecent();
+})();
+</script>
 {% endblock %}
